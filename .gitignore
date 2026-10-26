@@ -12,3 +12,5 @@ venv/
 *.png
 client_secret.json
 youtube-oauth2.json
+.pytest_cache/
+*.json.report

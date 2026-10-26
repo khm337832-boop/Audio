@@ -1,10 +1,25 @@
+# core
 aiogram>=3.4,<4
 python-dotenv>=1.0
-google-generativeai>=0.8
 requests>=2.31
+
+# ဇာတ်လမ်း / ပုံ ဖန်တီးခြင်း
+google-generativeai>=0.8
+google-genai>=0.3
 Pillow>=10.0
+
+# မြန်မာ thumbnail စာသား shaping (Pillow မှာ libraqm မပါရင် ဒီနှစ်ခုကို သုံးတယ်)
+uharfbuzz>=0.37
+freetype-py>=2.4
+
+# အသံ / ဗီဒီယို (ffmpeg ကို system မှာ ထည့်ရမယ်)
 f5-myanmar-tts>=0.2.0
 pydub>=0.25
+
+# YouTube
 google-api-python-client>=2.100
 google-auth-oauthlib>=1.0
 google-auth-httplib2>=0.1
+
+# test
+pytest>=8.0
