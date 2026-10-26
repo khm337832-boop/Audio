@@ -498,3 +498,61 @@ def test_broken_client_secret_reports_error(tmp_path):
     info = youtube_service.client_secret_info(path)
     assert info["exists"] is True and info["type"] is None
     assert "JSON" in str(info.get("error"))
+
+
+# ------------------------------------------------------------------ token env (cloud)
+def test_decode_token_payload_raw_and_base64():
+    import base64
+
+    from services import youtube_service as ys
+
+    payload = {"token": "a", "refresh_token": "r", "client_id": "c",
+               "client_secret": "s", "token_uri": "https://oauth2.googleapis.com/token"}
+    raw = json.dumps(payload)
+    assert ys.decode_token_payload(raw)["refresh_token"] == "r"
+    b64 = base64.b64encode(raw.encode()).decode()
+    assert ys.decode_token_payload(b64)["token"] == "a"
+
+
+def test_export_token_env_roundtrip(tmp_path):
+    from services import youtube_service as ys
+
+    token = tmp_path / "tok.json"
+    token.write_text(json.dumps({"token": "x", "refresh_token": "y"}))
+    line = ys.export_token_env(token)
+    assert line.startswith("YOUTUBE_TOKEN_JSON=")
+    assert ys.decode_token_payload(line.split("=", 1)[1])["token"] == "x"
+
+
+def test_export_token_env_rejects_missing_or_bad(tmp_path):
+    from services import youtube_service as ys
+
+    with pytest.raises(ys.YouTubeAuthError):
+        ys.export_token_env(tmp_path / "nope.json")
+    bad = tmp_path / "bad.json"
+    bad.write_text("{not json")
+    with pytest.raises(Exception):
+        ys.export_token_env(bad)
+
+
+def test_env_token_used_when_file_missing(monkeypatch, tmp_path):
+    """token ဖိုင် မရှိရင် YOUTUBE_TOKEN_JSON (env) ကို သုံးရမယ်။"""
+    import base64
+
+    from services import youtube_service as ys
+
+    payload = {
+        "token": "fake", "refresh_token": "r", "client_id": "c", "client_secret": "s",
+        "token_uri": "https://oauth2.googleapis.com/token", "scopes": list(ys.SCOPES),
+        "expiry": "2030-01-01T00:00:00Z",
+    }
+    monkeypatch.setattr(config, "YOUTUBE_TOKEN_JSON",
+                        base64.b64encode(json.dumps(payload).encode()).decode())
+    monkeypatch.setattr(config, "YOUTUBE_TOKEN_FILE", tmp_path / "missing.json")
+    monkeypatch.setattr(config, "YOUTUBE_CLIENT_SECRETS", tmp_path / "cs.json")
+    try:
+        info = ys.describe_auth_status()
+    except ys.YouTubeAuthError:
+        pytest.skip("google-auth မရှိပါ")
+    assert info.get("token_env") is True
+    assert info.get("token_source") == "env"

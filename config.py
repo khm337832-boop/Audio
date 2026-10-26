@@ -52,6 +52,9 @@ YOUTUBE_MADE_FOR_KIDS = _env_bool("YOUTUBE_MADE_FOR_KIDS", False)
 # bot ထဲမှာ browser ဖွင့်လို့မရတာမို့ default false — `python main.py auth` ကို အရင် run ပါ
 YOUTUBE_INTERACTIVE = _env_bool("YOUTUBE_INTERACTIVE", False)
 YOUTUBE_OAUTH_PORT = int(os.getenv("YOUTUBE_OAUTH_PORT", "8085"))
+# cloud (Render/Railway/VPS) မှာ ဖိုင် မပျောက်အောင် token ကို env var အနေနဲ့ ထည့်နိုင်တယ်
+# raw JSON (သို့) base64 — `python main.py auth --export-env` က ထုတ်ပေးတယ်
+YOUTUBE_TOKEN_JSON = os.getenv("YOUTUBE_TOKEN_JSON", "").strip()
 YOUTUBE_LANGUAGE = os.getenv("YOUTUBE_LANGUAGE", "my")
 YOUTUBE_DEFAULT_AUDIO_LANGUAGE = os.getenv("YOUTUBE_DEFAULT_AUDIO_LANGUAGE", "my")
 

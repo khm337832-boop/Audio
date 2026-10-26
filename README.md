@@ -116,7 +116,8 @@ python main.py setup
 python main.py auth --status   # client အမျိုးအစား + token အခြေအနေ
 python main.py auth            # browser ပွင့်တဲ့ စက်အတွက်
 python main.py auth --manual   # browser မပွင့်ရင် (link copy → code paste)
-python main.py auth --status   # token အခြေအနေ
+python main.py auth --status     # client အမျိုးအစား + token အခြေအနေ
+python main.py auth --export-env # cloud အတွက် YOUTUBE_TOKEN_JSON=… ထုတ်
 # ✅ ချိတ်ဆက်ပြီး — channel: <သင့် channel> (subscribers: …)
 ```
 

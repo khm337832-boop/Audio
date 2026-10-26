@@ -285,6 +285,41 @@ def _import_oauth():
     return Request, Credentials, InstalledAppFlow, build
 
 
+def decode_token_payload(raw: str) -> dict[str, Any]:
+    """`YOUTUBE_TOKEN_JSON` တန်ဖိုးကို dict အဖြစ် ပြောင်း (raw JSON / base64 နှစ်မျိုးလုံး ရ)။"""
+    raw = (raw or "").strip()
+    if not raw:
+        raise YouTubeAuthError("token env ဗလာဖြစ်နေတယ်")
+    if raw.startswith("{"):
+        return json.loads(raw)
+    import base64
+
+    decoded = base64.b64decode(raw + "=" * (-len(raw) % 4)).decode("utf-8")
+    return json.loads(decoded)
+
+
+def _env_token_info() -> dict[str, Any] | None:
+    if not config.YOUTUBE_TOKEN_JSON:
+        return None
+    try:
+        return decode_token_payload(config.YOUTUBE_TOKEN_JSON)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("YOUTUBE_TOKEN_JSON ဖတ်မရပါ: %s", exc)
+        return None
+
+
+def export_token_env(token_file: str | Path | None = None) -> str:
+    """token ဖိုင်ကို `YOUTUBE_TOKEN_JSON=<base64>` လိုင်းအဖြစ် ထုတ်ပေးတယ် (cloud deploy အတွက်)။"""
+    import base64
+
+    path = Path(token_file or config.YOUTUBE_TOKEN_FILE)
+    if not path.exists():
+        raise YouTubeAuthError(f"token ဖိုင် မတွေ့ပါ: {path} — `python main.py auth` ကို အရင် run ပါ")
+    raw = path.read_bytes()
+    json.loads(raw)  # မှန်/မမှန် စစ်
+    return "YOUTUBE_TOKEN_JSON=" + base64.b64encode(raw).decode()
+
+
 def client_secret_info(client_secret_file: str | Path | None = None) -> dict[str, Any]:
     """`client_secret.json` ရဲ့ အမျိုးအစား (installed/web) နဲ့ redirect URIs ကို ဖတ်တယ်။"""
     path = Path(client_secret_file or config.YOUTUBE_CLIENT_SECRETS)
@@ -438,6 +473,16 @@ def get_authenticated_service(
             logger.warning("token ဖတ်မရပါ: %s", exc)
             creds = None
 
+    if creds is None:
+        env_payload = _env_token_info()
+        if env_payload:
+            try:
+                creds = Credentials.from_authorized_user_info(env_payload, list(SCOPES))
+                logger.info("token ကို YOUTUBE_TOKEN_JSON (env) ကနေ ယူတယ်")
+            except Exception as exc:
+                logger.warning("env token မရပါ: %s", exc)
+                creds = None
+
     if creds and creds.expired and creds.refresh_token:
         try:
             creds.refresh(Request())
@@ -450,7 +495,8 @@ def get_authenticated_service(
             raise YouTubeAuthError(
                 "YouTube OAuth token မရှိသေးပါ — terminal မှာ `python main.py auth` ကို "
                 "တစ်ခါ run ပြီး ခွင့်ပြုချက် ပေးပါ (token ကို "
-                f"{config.YOUTUBE_TOKEN_FILE} မှာ သိမ်းပါမယ်)"
+                f"{config.YOUTUBE_TOKEN_FILE} မှာ သိမ်းပါမယ်)။ "
+                "Cloud မှာ run ရင် `python main.py auth --export-env` ကို သုံးပါ"
             )
         if not client_secret_file.exists():
             raise YouTubeAuthError(
@@ -496,13 +542,26 @@ def describe_auth_status() -> dict[str, object]:
         "expired": None,
         "has_refresh": None,
     }
+    info["token_env"] = bool(config.YOUTUBE_TOKEN_JSON)
+    creds = None
     if token_file.exists():
         try:
             creds = Credentials.from_authorized_user_file(str(token_file), list(SCOPES))
-            info["expired"] = bool(creds.expired)
-            info["has_refresh"] = bool(creds.refresh_token)
         except Exception:
             info["token_file"] = False
+    if creds is None:
+        env_payload = _env_token_info()
+        if env_payload:
+            try:
+                creds = Credentials.from_authorized_user_info(env_payload, list(SCOPES))
+                info["token_source"] = "env"
+            except Exception:
+                creds = None
+    else:
+        info["token_source"] = "file"
+    if creds is not None:
+        info["expired"] = bool(creds.expired)
+        info["has_refresh"] = bool(creds.refresh_token)
     return info
 
 

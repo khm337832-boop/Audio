@@ -45,6 +45,12 @@ Bot က သင့် channel မှာ တင်ပေးနိုင်ဖိ�
 
 ## အဆင့် ၄ — OAuth client (Desktop) ဖန်တီးပြီး ဖိုင် ဒေါင်းလုပ်
 
+> 🆕 UI အသစ် (“Google Auth Platform”) မှာဆိုရင် လမ်းကြောင်းက —
+> **Clients → Create client → Application type: Desktop app → Create**
+> “OAuth client created” popup မှာ **Download JSON** ကို နှိပ်ပါ။
+> ⚠️ အဲဒီ popup ကို ပိတ်လိုက်ရင် secret ကို ပြန်ကြည့်လို့ မရတော့ပါ — ပိတ်ခင် **Download JSON** အရင် နှိပ်ပါ။
+
+
 1. **APIs & Services** → **Credentials**
 2. အပေါ်က **+ Create credentials** → **OAuth client ID**
 3. Application type: **Desktop app** ← (ဒါက အရေးကြီး)
@@ -115,6 +121,36 @@ python main.py auth --manual
 ✅ အောင်မြင်ရင် `youtube-oauth2.json` ဖိုင် ဖြစ်လာပါမယ် — အဲဒါကို ထိန်းထားပါ၊ နောက်တစ်ခါ ပြန်လုပ်စရာ မလို။
 
 ---
+
+## ဖုန်းပဲ ရှိတယ် / bot က server (Render, VPS) ပေါ်မှာ run နေတယ်
+
+ဒီအခြေအနေမှာ `localhost` ကို bot ရှိတဲ့စက်က ပဲ မြင်နိုင်တာမို့ **paste-code နည်း** ကို သုံးပါ။
+
+1. bot run နေတဲ့ စက် (သို့) သင့်ကွန်ပျူတာမှာ —
+
+```bash
+python main.py auth --manual
+```
+
+2. Terminal က ပြမယ့် **link ကို ဖုန်း browser မှာ ဖွင့်** → Google account ရွေး → Allow
+3. ပြီးရင် `http://localhost:8085/?code=4/0A…` ဆိုတဲ့ page ကို “ဒီ site ကို မရောက်နိုင်ပါ” လို့ ပြပါမယ် —
+   **စိတ်မပူပါ**၊ အဲဒီ page ရဲ့ **address bar က URL တစ်ခုလုံး** ကို copy လုပ်ပါ
+4. Terminal မှာ paste → Enter → `✅ ချိတ်ဆက်ပြီး — channel: …`
+
+> ကွန်ပျူတာမှာ `python main.py auth` (browser အလိုအလျောက်) run ပြီး ဖြစ်လာတဲ့
+> `youtube-oauth2.json` ဖိုင်ကို server ဆီ copy လုပ်တာလည်း ရပါတယ်။
+
+### ☁️ Cloud (Render/Railway/VPS) မှာ token မပျောက်အောင်
+
+Server တွေမှာ ဖိုင် ပျက်တတ်တာမို့ token ကို **environment variable** အနေနဲ့ ထည့်ပါ:
+
+```bash
+python main.py auth --export-env
+# 👇 ဒီလိုင်းကို hosting ရဲ့ Environment Variables မှာ ထည့်ပါ:
+# YOUTUBE_TOKEN_JSON=eyJ0b2tlbiI6…
+```
+
+`YOUTUBE_TOKEN_JSON` ရှိရင် ဖိုင် မရှိလည်း bot က အဲဒီက token ကို သုံးတယ် (`--status` မှာ `token_source=env` ပြမယ်)။
 
 ## အဆင့် ၆ — စမ်းသပ်
 

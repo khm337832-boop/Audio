@@ -68,6 +68,8 @@ def _build_parser() -> argparse.ArgumentParser:
     auth.add_argument("--redirect-uri",
                       help="redirect URI (Web client ဖြစ်ရင် — ဥပမာ http://localhost:8085/)")
     auth.add_argument("--status", action="store_true", help="လက်ရှိ token အခြေအနေ ကြည့်")
+    auth.add_argument("--export-env", action="store_true",
+                      help="cloud (Render/VPS) အတွက် YOUTUBE_TOKEN_JSON=… လိုင်း ထုတ်ပေးမယ်")
 
     sub.add_parser("setup", help="BOT_TOKEN / GEMINI_API_KEY ကို စစ်ပြီး .env ထဲ သိမ်းမယ်")
     sub.add_parser("doctor", help="အဆင်သင့်ဖြစ်မှု အကျဉ်းချုပ် (secrets မပါ — ကူးပို့နိုင်တယ်)")
@@ -214,6 +216,16 @@ def cmd_auth(args: argparse.Namespace) -> int:
     secret_path = Path(args.client_secret) if args.client_secret else Path(config.YOUTUBE_CLIENT_SECRETS)
     client = ys.client_secret_info(secret_path)
 
+    if args.export_env:
+        try:
+            print("\n👇 ဒီလိုင်းကို hosting (Render/Railway/VPS) ရဲ့ Environment Variables မှာ ထည့်ပါ:")
+            print(ys.export_token_env())
+            print("\n(ဒီတန်ဖိုးက သင့် channel ကို တင်ခွင့်ပေးထားတဲ့ token — လျှို့ဝှက်ပါ)")
+        except Exception as exc:  # noqa: BLE001
+            logger.error("ထုတ်မရပါ: %s", exc)
+            return 1
+        return 0
+
     if args.status:
         print(f"client_secret.json: {'✅ ရှိ' if client['exists'] else '❌ မရှိ'}  ({secret_path})")
         if client["exists"]:
@@ -230,9 +242,12 @@ def cmd_auth(args: argparse.Namespace) -> int:
         except Exception as exc:  # noqa: BLE001
             logger.error("စစ်မရပါ: %s", exc)
             return 1
+        source = info.get("token_source")
         print(f"youtube-oauth2.json: {'✅ ရှိ' if info['token_file'] else '❌ မရှိ'}")
-        if info["token_file"]:
-            print(f"  သက်တမ်းကုန်: {info['expired']} | refresh token: {info['has_refresh']}")
+        print(f"YOUTUBE_TOKEN_JSON (env): {'✅ ရှိ' if info.get('token_env') else '— မရှိ'}")
+        if source:
+            print(f"  အသုံးပြုမယ့် token: {source} | သက်တမ်းကုန်: {info['expired']} | "
+                  f"refresh token: {info['has_refresh']}")
         if not info["token_file"]:
             _print_auth_help()
         return 0
@@ -275,6 +290,7 @@ def cmd_auth(args: argparse.Namespace) -> int:
             print("   YouTube channel တစ်ခု ဖန်တီးထားဖို့ လိုတယ် (youtube.com → Create channel)")
         print(f"🔑 token: {config.YOUTUBE_TOKEN_FILE}")
         print("\n👉 စမ်းသပ်ရန်: python main.py publish --job-dir temp/real_test --privacy private")
+        print("☁️ cloud မှာ run မယ်ဆိုရင်: python main.py auth --export-env")
         print("   (quota: တစ်ရက် 10,000 units — upload တစ်ခု ~1,600 units ≈ ၆ ခု/ရက်)")
         return 0
     except Exception as exc:  # noqa: BLE001
