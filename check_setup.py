@@ -68,29 +68,47 @@ def main() -> int:
         add(FAIL, "မြန်မာ font", f"{font} မတွေ့",
             "assets/fonts/ ထဲမှာ Padauk/Noto Sans Myanmar ထည့်ပါ (သို့) THUMBNAIL_FONT သတ်မှတ်ပါ")
 
-    print("\n=== ③ အသံ / ဗီဒီယို ===")
-    for binary in ("ffmpeg", "ffprobe"):
-        if shutil.which(binary):
-            add(OK, binary, shutil.which(binary) or "")
-        else:
-            add(FAIL, binary, "မတွေ့ပါ", "sudo apt install ffmpeg")
+    print("\n=== ③ ဇာတ်လမ်း အရှည် ===")
+    low, high = config.story_target()
+    add(OK, "ဇာတ်လမ်း ပစ်မှတ်", f"{low:,}–{high:,} စာလုံး "
+        f"(အခန်း ~{config.STORY_CHAPTER_CHARS:,} စာလုံး၊ အများဆုံး {config.STORY_MAX_CHAPTERS})")
 
-    import os
+    print("\n=== ④ အသံ / ဗီဒီယို ===")
+    from services import media
 
-    tts_command = os.getenv("TTS_COMMAND", "").strip()
-    if tts_command:
-        add(OK, "TTS_COMMAND", tts_command[:60] + "…")
+    ffmpeg = media.ffmpeg_binary()
+    if ffmpeg:
+        add(OK, "ffmpeg", ffmpeg)
     else:
-        try:
-            importlib.import_module("f5_myanmar_tts")
+        add(FAIL, "ffmpeg", "မတွေ့ပါ", "sudo apt install ffmpeg (သို့) pip install imageio-ffmpeg")
+    if shutil.which("ffprobe"):
+        add(OK, "ffprobe", "အသံကြာချိန် တိတိကျကျ တိုင်းနိုင်တယ်")
+    elif ffmpeg:
+        add(WARN, "ffprobe", "မရှိ — စာလုံးအရေအတွက်နဲ့ ခန့်မှန်းမယ်", "sudo apt install ffmpeg")
 
-            add(WARN, "TTS engine", "f5-myanmar-tts ရှိပေမယ့် TTS_COMMAND မသတ်မှတ်ရသေး",
-                '.env မှာ TTS_COMMAND="f5-tts_infer --gen_text_file {text_file} --output {output}"')
-        except Exception:
-            add(FAIL, "TTS engine", "မသတ်မှတ်ရသေး",
-                "pip install f5-myanmar-tts ပြီး TTS_COMMAND ကို .env မှာ သတ်မှတ်ပါ")
+    from services import tts_service
 
-    print("\n=== ④ Telegram / API key ===")
+    if tts_service.local_available():
+        add(OK, "မြန်မာ TTS (local)", config.TTS_COMMAND[:50] + "…" if config.TTS_COMMAND
+            else "f5-myanmar-tts တွေ့ပြီး (TTS_COMMAND မသတ်မှတ်ရသေး)")
+        if not config.TTS_COMMAND:
+            add(WARN, "TTS_COMMAND", "မသတ်မှတ်ရသေး",
+                '.env: TTS_COMMAND="f5-tts_infer --gen_text_file {text_file} --output {output}"')
+    else:
+        add(FAIL, "မြန်မာ TTS (local)", "မရှိပါ",
+            "pip install f5-myanmar-tts ပြီး TTS_COMMAND သတ်မှတ်ပါ")
+
+    if config.ELEVENLABS_API_KEY:
+        add(OK, "ElevenLabs (deep voice)",
+            f"voice={config.ELEVENLABS_VOICE_NAME} model={config.ELEVENLABS_MODEL}")
+    else:
+        add(WARN, "ElevenLabs", "မရှိ — အင်္ဂလိပ်/English deep voice မရနိုင်",
+            "ELEVENLABS_API_KEY ထည့်ပါ (Charon voice)")
+
+    provider = tts_service.resolve_provider("my")
+    add(OK if provider == "local" else WARN, "မြန်မာစာအတွက် provider", provider)
+
+    print("\n=== ⑤ Telegram / API key ===")
     env_file = Path(".env")
     if env_file.is_file():
         add(OK, ".env ဖိုင်", str(env_file.resolve()))
@@ -108,18 +126,19 @@ def main() -> int:
         add(WARN, "GEMINI_API_KEY", "မရှိ — template/offline ဇာတ်လမ်းနဲ့ အလုပ်လုပ်မယ်",
             "https://aistudio.google.com/apikey ကနေ key ယူပါ")
 
-    print("\n=== ⑤ YouTube ===")
+    print("\n=== ⑥ YouTube ===")
     if Path(config.YOUTUBE_CLIENT_SECRETS).is_file():
         add(OK, "client_secret.json", str(config.YOUTUBE_CLIENT_SECRETS))
         if Path(config.YOUTUBE_TOKEN_FILE).is_file():
-            add(OK, "youtube-oauth2.json", "OAuth token cache ရှိပြီး")
+            add(OK, "youtube-oauth2.json", "OAuth token cache ရှိပြီး — bot တိုက်ရိုက် တင်နိုင်တယ်")
         else:
-            add(WARN, "youtube-oauth2.json", "ပထမဆုံး run မှာ browser ဖွင့်ပြီး ခွင့်ပြုရမယ်")
+            add(WARN, "youtube-oauth2.json", "token မရှိသေး — bot က dry-run ပဲ လုပ်နိုင်တယ်",
+                "python main.py auth  (တစ်ခါသာ)")
     else:
         add(FAIL if not config.DRY_RUN else WARN, "client_secret.json", "မရှိပါ",
             "DRY_RUN=true ဆိုရင် မလိုပါ။ တကယ်တင်ရန် Google Cloud Console ကနေ OAuth client ဖန်တီးပါ")
 
-    print("\n=== ⑥ Thumbnail render စမ်းသပ်မှု ===")
+    print("\n=== ⑦ Thumbnail render စမ်းသပ်မှု ===")
     try:
         import tempfile
 
@@ -155,13 +174,19 @@ def main() -> int:
         for _, name, _, fix in fails:
             print(f"  • {name}: {fix}")
 
-        print("\n👉 ဒီအတိုင်း လုပ်လို့ရတဲ့ အပိုင်း (ဗီဒီယို ပြီးသားရှိရင်):")
-        print("    python main.py publish --job-dir temp/job_x --dry-run")
+        if any("TTS" in name for _, name, _, _ in fails):
+            print("\n👉 TTS မရှိသေးလို့ အဆင့် ③ (voice over) ကို မလုပ်နိုင်ပါ။")
+            print("   • မြန်မာ: TTS_COMMAND သတ်မှတ်ပါ")
+            print("   • အင်္ဂလိပ်/deep voice: ELEVENLABS_API_KEY ထည့်ပါ")
+        if any("client_secret" in name for _, name, _, _ in fails):
+            print("\n👉 YouTube မတင်နိုင်သေးပါ — dry-run နဲ့ စမ်းနိုင်တယ်:")
+            print("    python main.py produce --dry-run")
         return 1
 
     if warns:
-        print("\n👉 စမ်းသပ် mode နဲ့ စတင်နိုင်ပါပြီ: DRY_RUN=true python bot.py")
-        print("   (YouTube API မခေါ်ဘဲ payload/thumbnail ကို ထုတ်ပြပါမယ်)")
+        print("\n👉 စမ်းသပ် mode နဲ့ စတင်နိုင်ပါပြီ:")
+        print("    python main.py produce --dry-run      # terminal")
+        print("    DRY_RUN=true python bot.py            # Telegram (YouTube မတင်)")
     else:
         print("\n👉 အဆင်သင့်ပါပြီ: python bot.py")
     return 0

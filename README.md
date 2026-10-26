@@ -1,190 +1,162 @@
 # 🎬 Audio — မြန်မာ အသံဇာတ်လမ်း → YouTube အလိုအလျောက် Pipeline
 
-ဗီဒီယိုပေါင်းစည်းပြီးသားကနေ **YouTube ပေါ် တင်တဲ့အထိ** အဆင့်လိုက် workflow ကို
-`workflow.py` ထဲမှာ စုစည်းထားပါတယ်။ ဇာတ်လမ်း + အနှစ်ချုပ်ကို `story.json`
-အနေနဲ့ ဇာတ်လမ်းထုတ်လုပ်တဲ့အဆင့်မှာ သိမ်းထားတာကြောင့် နောက်ပိုင်း အနှစ်ချုပ်ကို
-ပြန်မထုတ်ရပါဘူး။
+Telegram bot မှာ **“🚀 ဇာတ်လမ်းဖန်တီးပြီး YouTube တင်မယ်”** ကို နှိပ်လိုက်ရင်
+ဇာတ်လမ်းရေးကနေ YouTube channel ပေါ် တင်တဲ့အထိ အဆင့် ၈ ဆင့် အလိုအလျောက် လုပ်ပေးတယ်။
 
-## Workflow
+## Workflow (အဆင့် ၁–၈)
 
 ```
-ဗီဒီယိုပေါင်းစည်းခြင်း ပြီးစီး  (final.mp4)
+① Telegram — “တင်မယ်” ခလုတ်  (bot.py · handlers/start_handler.py)
         ↓
-ဇာတ်လမ်းအနှစ်ချုပ်နှင့် အခန်းအချက်အလက်များ ထုတ်ယူခြင်း   ← story.json (ဇာတ်လမ်းအဆင့်မှာ သိမ်းထား)
+② ဇာတ်လမ်းရေး — စာလုံးရေ ၂၀,၀၀၀–၂၅,၀၀၀  (services/story_generator.py)
         ↓
-generate_youtube_title()        → ခေါင်းစဉ် ကိုယ်စားလှယ် ၃ ခု + ★ အကြံပြုချက်
+③ Voice over — မြန်မာ TTS / ElevenLabs Charon (services/tts_service.py)
         ↓
-generate_youtube_description()  → SEO ဖော်ပြချက် (chapter timestamp / tag / hashtag)
+④ ဇာတ်ကွက်အလိုက် ပုံဖန်တီး — scene prompt + image (services/scene_service.py)
         ↓
-generate_thumbnail_prompt() + generate_scene_image()  → thumbnail base ပုံ
+⑤ Motion video ဖန်တီး (services/video_service.py → ffmpeg)
         ↓
-PIL ဖြင့် စာသားထပ်ဆင့်ခြင်း     ← မြန်မာ text shaping (raqm/uharfbuzz)
+⑥ အသံနဲ့ ပေါင်းစပ် → final.mp4
         ↓
-YouTube API တင်ခြင်း             → ခေါင်းစဉ် + ဖော်ပြချက် + ဗီဒီယို + thumbnail
+⑦ သင်္ကေတပုံ + SEO ခေါင်းစဉ်/ဖော်ပြချက် (services/thumbnail_service.py · youtube_service.py)
+        ↓
+⑧ YouTube channel မှာ တင်ခြင်း — ဗီဒီယို + thumbnail (services/youtube_service.py)
 ```
+
+အားလုံးကို `pipeline.StoryPipeline` က စီစဉ်တယ် — bot နဲ့ CLI နှစ်ခုလုံး အဲဒါကို ခေါ်တယ်။
+ဗီဒီယိုပြီးသား (mp4) ရှိရင် **ဖိုင်ကို bot ထဲ ပို့လိုက်ရုံ**နဲ့ အဆင့် ၇-၈ ကို လုပ်ပေးတယ်။
 
 ## ဖိုင်ဖွဲ့စည်းပုံ
 
 ```
-config.py                    # .env ဖတ်ခြင်း၊ limit/threshold အားလုံး
-workflow.py                  # ★ PublishWorkflow — အဆင့် ၁-၇ ကို စီစဉ်တဲ့ နေရာ
-main.py                      # CLI: publish / title / metadata
-bot.py                       # Telegram bot (ဇာတ်လမ်း → ဗီဒီယို → publish)
+bot.py                       # Telegram: ခလုတ် → pipeline → YouTube
+pipeline.py                  # ★ အဆင့် ၂-၈ ကို စီစဉ်တဲ့ StoryPipeline (+ progress)
+workflow.py                  # ★ PublishWorkflow (metadata → title → desc → thumbnail → upload)
+main.py                      # CLI: produce / publish / auth / title / metadata
+check_setup.py               # ဘာတွေ လိုနေလဲ စစ်ဆေးခြင်း
+config.py                    # .env + limit/threshold အားလုံး
 
-models/story.py              # Story, Chapter, StoryMetadata (+ story.json save/load)
-
+models/story.py              # Story / Chapter / StoryMetadata (+ story.json)
 services/
-  story_generator.py         # ဇာတ်လမ်းရေး + story.json သိမ်း
-  metadata_service.py        # အနှစ်ချုပ်/အခန်းအချက်အလက် ထုတ်ယူ (LLM → heuristic fallback)
-  youtube_service.py         # title / description / tags / upload (+thumbnail.set)
-  thumbnail_service.py       # prompt → base ပုံ → PIL စာသားထပ်ခြင်း
-  image_service.py           # Imagen/Gemini → မရရင် procedural ပုံ
-  tts_service.py             # အခန်းလိုက် အသံထွက် + ပေါင်းခြင်း
-  video_service.py           # clip / concat / mux (ffmpeg) — final.mp4 ထုတ်
-  media.py                   # ffmpeg wrapper
-  llm.py                     # Gemini wrapper (key မရှိရင် LLMUnavailable)
-
+  story_generator.py         # ② ၂၀,၀၀၀–၂၅,၀၀၀ စာလုံး (outline → အခန်းလိုက်)
+  tts_service.py             # ③ local (မြန်မာ) / ElevenLabs (Charon)
+  scene_service.py           # ④ ဇာတ်ကွက် prompt + ပုံ (concurrent)
+  video_service.py           # ⑤⑥ motion clip + အသံပေါင်းစပ်
+  media.py                   # ffmpeg wrapper (PATH → imageio-ffmpeg fallback)
+  metadata_service.py        # အနှစ်ချုပ်/အခန်းအချက်အလက်
+  thumbnail_service.py       # ⑦ သင်္ကေတပုံ (base → PIL စာသားထပ်)
+  youtube_service.py         # ⑦ SEO + ⑧ upload (+thumbnail.set)
+  image_service.py, llm.py
 utils/
-  textrender.py              # ★ မြန်မာ/အာရဗီ text shaping painter (raqm → uharfbuzz → basic)
-  textkit.py                 # wrap/clamp/timestamp/hashtag
+  textrender.py              # မြန်မာ text shaping (raqm → uharfbuzz → basic)
+  textkit.py
 
-assets/fonts/                # Padauk (မြန်မာ) — OFL
-tests/test_workflow.py       # 18 tests (network မလိုပဲ အလုပ်လုပ်တယ်)
+assets/fonts/                # Padauk (မြန်မာ) — SIL OFL
+tests/                       # 30 tests (network/API မလို)
 ```
 
-## အဆင်သင့်ဖြစ်မှု စစ်ဆေးခြင်း
-
-Bot ကို မစခင်မှာ တစ်ချက်တည်း စစ်နိုင်တယ်:
-
-```bash
-python check_setup.py
-```
-
-✅ အဆင်သင့် / ⚠️ မရှိလည်း အလုပ်လုပ် (fallback) / ❌ ဒါမပါရင် အဆင့်တစ်ခု ရပ်မယ် ဆိုပြီး
-package၊ ffmpeg၊ TTS၊ `.env`/`BOT_TOKEN`၊ Gemini key၊ YouTube OAuth၊ မြန်မာ font နဲ့
-thumbnail render ကို တစ်ကြောင်းစီ ပြတယ်။ မရှိတာရှိရင် ဖြေရှင်းနည်းကိုပါ ပြပေးတယ်။
-
-## အမြန် စတင်ခြင်း
+## စတင်ခြင်း
 
 ```bash
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-sudo apt install ffmpeg          # ဗီဒီယို အဆင့်အတွက်
-cp .env.example .env             # API key များ ထည့်ပါ
+cp .env.example .env            # key များ ထည့်ပါ
+python check_setup.py           # ✅ ⚠️ ❌ စစ်ဆေးခြင်း
 ```
+
+`.env` မှာ အနည်းဆုံး —
+
+| Key | ဘာအတွက် |
+|-----|---------|
+| `BOT_TOKEN` | Telegram bot |
+| `GEMINI_API_KEY` | ၂၀,၀၀၀+ စာလုံး ဇာတ်လမ်း၊ SEO၊ ပုံ prompt |
+| `TTS_COMMAND` **သို့** `ELEVENLABS_API_KEY` | voice over (မြန်မာ / deep voice) |
+| `client_secret.json` | YouTube တကယ်တင်ရန် |
+
+## YouTube တကယ်တင်ရန် (တစ်ခါသာ ပြင်ဆင်ရမယ်)
+
+1. Google Cloud Console → YouTube Data API v3 ကို enable
+2. OAuth client (Desktop) ဖန်တီး → `client_secret.json` ကို repo root မှာ ထည့်
+3. **terminal မှာ တစ်ခါ run** —
+
+```bash
+python main.py auth
+# ✅ ချိတ်ဆက်ပြီး — channel: <သင့် channel> (subscribers: …)
+```
+
+token ကို `youtube-oauth2.json` မှာ သိမ်းထားတာမို့ bot က နောက်ပိုင်း browser မလိုဘဲ တင်နိုင်တယ်။
+(`YOUTUBE_INTERACTIVE=false` — bot ထဲမှာ browser ဖွင့်တာ မလုပ်ပါ)
 
 ## အသုံးပြုပုံ
 
-### ① CLI — ဗီဒီယိုပြီးသားကနေ တင်တဲ့အထိ
-
-```bash
-# job folder ထဲမှာ final.mp4 + story.json ရှိရမယ်
-python main.py metadata --job-dir temp/job_20260101_120000   # အနှစ်ချုပ် စစ်ကြည့်
-python main.py title    --job-dir temp/job_20260101_120000   # ခေါင်းစဉ် ကိုယ်စားလှယ်များ
-python main.py publish  --job-dir temp/job_20260101_120000 --dry-run
-```
-
-`--dry-run` က YouTube API မခေါ်ဘဲ `youtube_payload.json`, `thumbnail.jpg`,
-`publish_result.json` ကို ထုတ်ပေးတယ် (စမ်းသပ်ရန်)။
-
-တကယ်တင်ရင်:
-
-```bash
-python main.py publish --job-dir temp/job_x --privacy private
-python main.py publish --job-dir temp/job_x --publish-at 2026-11-01T09:00:00Z   # schedule
-python main.py publish --job-dir temp/job_x --title "ငါ့ ခေါင်းစဉ်"             # ကိုယ်တိုင်ရွေး
-```
-
-### ② Python ထဲကနေ
-
-```python
-import asyncio
-from workflow import publish_after_video
-
-artifacts = asyncio.run(publish_after_video("temp/job_x", dry_run=True))
-print(artifacts.title, artifacts.thumbnail, artifacts.upload.url)
-```
-
-အဆင့်တစ်ခုချင်း ခေါ်ချင်ရင်:
-
-```python
-from workflow import PublishOptions, PublishWorkflow
-
-wf = PublishWorkflow("temp/job_x", options=PublishOptions(dry_run=True))
-metadata = wf.load_metadata()          # ② အနှစ်ချုပ် + အခန်းအချက်အလက်
-print(metadata.summary, [c["title"] for c in metadata.chapters])
-```
-
-### ③ Telegram bot
+### Telegram
 
 ```bash
 python bot.py
 ```
 
-`/start` → “🎬 ဇာတ်လမ်း ဖန်တီး” နှိပ်ရင် ဇာတ်လမ်း → အသံ → ပုံ → ဗီဒီယို →
-ခေါင်းစဉ်/ဖော်ပြချက်/thumbnail → YouTube အထိ တစ်ခါတည်း လုပ်ပေးတယ်။
+- **🚀 ဇာတ်လမ်းဖန်တီးပြီး YouTube တင်မယ်** → အကြောင်းအရာ ရိုက်ထည့် (သို့ ကျော်) → အဆင့် ၁-၈
+- **🧪 စမ်းသပ် (dry-run)** → YouTube API မခေါ်ဘဲ ဗီဒီယို/thumbnail/SEO payload ထုတ်
+- **ဗီဒီယိုဖိုင် ပို့** → “🎬 YouTube တင်မယ်” / “🧪 dry-run” ခလုတ် ပေါ်လာ
+- `/cleanup` → temp/job folder များ ဖျက်
 
-## Workflow အဆင့်တစ်ခုချင်း (API)
+### CLI
 
-| အဆင့် | Function | ရလဒ် |
-|------|----------|-------|
-| ② metadata | `metadata_service.load_or_extract_metadata(job_dir)` | `StoryMetadata` (summary, logline, themes, characters, keywords, chapter durations) |
-| ③ title | `youtube_service.generate_youtube_title(metadata, count=3)` | `list[str]` (100 စာလုံး limit အတွင်း) |
-| ③+ | `youtube_service.pick_title(candidates, metadata)` | ★ အကြံပြု ခေါင်းစဉ် |
-| ④ description | `youtube_service.generate_youtube_description(metadata, title)` | SEO description + `mm:ss` chapters + hashtags |
-| ⑤ prompt | `thumbnail_service.generate_thumbnail_prompt(metadata)` | ပုံဖန်တီးရေး prompt |
-| ⑤ image | `image_service.generate_scene_image(prompt, path)` | 1280×720 base ပုံ |
-| ⑥ overlay | `thumbnail_service.compose_thumbnail(base, title, out, subtitle=…, badge=…)` | စာသားပါ thumbnail (JPEG ≤ 2MB) |
-| ⑦ upload | `youtube_service.upload_video(video, title, desc, thumb, …)` | `UploadResult` (video_id, url, privacy) |
+```bash
+python main.py produce --topic "ရှေးခေတ် ရွာတစ်ရွာက လျှို့ဝှက်ချက်"   # တကယ်တင်
+python main.py produce --dry-run                                        # စမ်းသပ်
+python main.py produce --chars 22000 --scenes 2 --tts elevenlabs
+python main.py publish --job-dir temp/job_x --privacy unlisted          # ပြီးသားကနေ တင်
+python main.py title   --job-dir temp/job_x                             # ခေါင်းစဉ် ရွေး
+```
 
-`upload_video()` က ဗီဒီယိုတင်ပြီးတာနဲ့ `thumbnails().set` ကို ခေါ်ပြီး
-thumbnail ကို တွဲတင်ပေးတယ်။ 500/502/503/504 ဆိုရင် exponential backoff နဲ့ ပြန်ကြိုးစားတယ်။
+### Python
 
-## မြန်မာစာသား (thumbnail) နဲ့ ပတ်သက်ပြီး အရေးကြီး
+```python
+import asyncio
+from pipeline import produce_and_publish
 
-Pillow က မြန်မာစာသားကို **shaping** မလုပ်ရင် ဗျည်း/သရ/ဗျည်းတွဲတွေ ကွဲထွက်ပြီး
-“မြစ်” ကို “မြ စ ်” လို လေပ်နေတတ်တယ်။ ဒါကြောင့် `utils/textrender.py` က —
+result = asyncio.run(produce_and_publish(topic="…", dry_run=True))
+print(result.story.total_chars, result.video_path, result.video_url)
+```
 
-1. **raqm** (Pillow + HarfBuzz) ရှိရင် → `RaqmPainter`
-2. မရှိရင် **uharfbuzz + freetype-py** → `ShapedPainter` (wheel နှစ်ခုသာ လိုတယ်)
-3. နှစ်ခုလုံး မရှိရင် → `BasicPainter` + သတိပေးချက် log
+## ရွေးချယ်နိုင်တဲ့ အချက်များ
 
-မြန်မာ font ကို `assets/fonts/Padauk-Bold.ttf` မှာ ပါထည့်ထားပါတယ် (SIL OFL)။
-တခြား font သုံးချင်ရင် `.env` မှာ `THUMBNAIL_FONT=assets/fonts/YourFont.ttf`။
+| `.env` | default | ဖော်ပြချက် |
+|--------|---------|-----------|
+| `STORY_MIN_CHARS` / `STORY_MAX_CHARS` | 20000 / 25000 | ဇာတ်လမ်း အရှည် |
+| `STORY_CHAPTER_CHARS` | 1200 | အခန်းတစ်ခန်း ပျမ်းမျှ |
+| `TTS_PROVIDER` | auto | `local` (မြန်မာ) / `elevenlabs` (Charon) |
+| `SCENES_PER_CHAPTER` | 2 | ဇာတ်ကွက် ပုံ အရေအတွက် |
+| `IMAGE_CONCURRENCY` | 3 | ပုံ ဖန်တီးမှု တစ်ပြိုင်နက် |
+| `YOUTUBE_PRIVACY_STATUS` | private | `public` / `unlisted` / `private` |
+| `DRY_RUN` | false | YouTube API မခေါ်ဘဲ စမ်းသပ် |
 
-## .env
+## မြန်မာစာသား (thumbnail) နဲ့ ပတ်သက်ပြီး
 
-| Key | ဖော်ပြချက် |
-|-----|-----------|
-| `BOT_TOKEN` | Telegram bot token |
-| `GEMINI_API_KEY` | ဇာတ်လမ်း/title/description/prompt အတွက် (မရှိရင် template/mock သုံးတယ်) |
-| `TTS_COMMAND` | TTS command template: `{text_file}`, `{output}` |
-| `YOUTUBE_PRIVACY_STATUS` | `private` / `unlisted` / `public` |
-| `YOUTUBE_CATEGORY_ID` | default `24` (Entertainment) |
-| `THUMBNAIL_FONT` | မြန်မာ font ဖိုင်လမ်းကြောင်း |
-| `DRY_RUN` / `FORCE_MOCK` | API မခေါ်ဘဲ စမ်းသပ်ရန် |
-| `TEMP_DIR` | job folder များ သိမ်းမယ့်နေရာ |
-
-OAuth အတွက် Google Cloud Console ကနေ OAuth client (Desktop) ဖန်တီးပြီး
-`client_secret.json` ကို repo root မှာ ထည့်ပါ။ ပထမဆုံး run မှာ browser ဖွင့်ပြီး
-consent ပေးရမယ်၊ token ကို `youtube-oauth2.json` မှာ cache လုပ်တယ်
-(နှစ်ဖိုင်လုံး `.gitignore` ထဲမှာ ပါပြီးသား).
+Pillow က မြန်မာစာသားကို shaping မလုပ်ရင် “မြစ်” ကို “မြ စ ်” လို လေပ်နေတတ်တယ်။
+ဒါကြောင့် `utils/textrender.py` က — ① raqm (Pillow+HarfBuzz) → ② uharfbuzz+freetype-py →
+③ basic (သတိပေးချက်) ဆိုပြီး အလိုအလျောက် ရွေးတယ်။ မြန်မာ font `Padauk-Bold` ကို
+`assets/fonts/` မှာ ပါထည့်ထားတယ် (OFL)။
 
 ## Job folder ရလဒ်များ
 
 ```
-temp/job_x/
-  story.json              # ဇာတ်လမ်း + အခန်း (ဇာတ်လမ်းအဆင့်က သိမ်း)
-  story_metadata.json     # ② အနှစ်ချုပ်/အခန်း အချက်အလက်
-  thumbnail_base.jpg      # ⑤ base ပုံ
-  thumbnail.jpg           # ⑥ စာသားထပ်ပြီး (YouTube အတွက်)
-  youtube_payload.json    # တင်မယ့် title/description/tags
-  publish_result.json     # အဆင့်တိုင်း အောင်မြင်/မအောင်မြင် + upload ရလဒ်
-  final.mp4               # ① ဗီဒီယို
+temp/job_20260101_120000/
+  story.json              # ဇာတ်လမ်း + အခန်း (၂၀,၀၀၀+ စာလုံး)
+  audio/                  # အခန်းလိုက် အသံ + full.wav/mp3
+  scenes.json             # ဇာတ်ကွက် prompt/caption
+  scenes/                 # ဇာတ်ကွက် ပုံများ
+  clips/                  # motion clips
+  final.mp4               # ⑥ ပြီးစီး ဗီဒီယို
+  thumbnail.jpg           # ⑦ သင်္ကေတပုံ
+  youtube_payload.json    # ⑧ တင်မယ့် title/description/tags
+  pipeline_result.json    # အဆင့်တိုင်း အခြေအနေ + YouTube ရလဒ်
 ```
 
 ## Test
 
 ```bash
-pytest -q        # network/API မလိုပါ (offline mode မှာ run တယ်)
+pytest -q          # 30 tests (network/API/ffmpeg မလို — fake အဆင့်များ)
+python check_setup.py
 ```

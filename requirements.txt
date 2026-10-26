@@ -15,6 +15,7 @@ freetype-py>=2.4
 # အသံ / ဗီဒီယို (ffmpeg ကို system မှာ ထည့်ရမယ်)
 f5-myanmar-tts>=0.2.0
 pydub>=0.25
+imageio-ffmpeg>=0.5  # ffmpeg မရှိရင် static binary ကို သုံးရန်
 
 # YouTube
 google-api-python-client>=2.100

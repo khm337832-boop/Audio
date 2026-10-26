@@ -308,7 +308,11 @@ def get_authenticated_service(
                 )
             flow = InstalledAppFlow.from_client_secrets_file(str(client_secret_file), list(SCOPES))
             if not interactive:
-                raise YouTubeAuthError("interactive OAuth မဖြစ်နိုင်ပါ — token_file လိုတယ်")
+                raise YouTubeAuthError(
+                    "YouTube OAuth token မရှိသေးပါ — terminal မှာ `python main.py auth` ကို "
+                    "တစ်ခါ run ပြီး ခွင့်ပြုချက် ပေးပါ (token ကို "
+                    f"{config.YOUTUBE_TOKEN_FILE} မှာ သိမ်းပါမယ်)"
+                )
             try:
                 creds = flow.run_local_server(port=0, open_browser=False)
             except Exception:
@@ -389,7 +393,7 @@ def upload_video(
     from googleapiclient.http import MediaFileUpload
     from googleapiclient.errors import HttpError
 
-    youtube = client or get_authenticated_service()
+    youtube = client or get_authenticated_service(interactive=config.YOUTUBE_INTERACTIVE)
 
     body: dict[str, Any] = {
         "snippet": {

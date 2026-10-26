@@ -49,8 +49,35 @@ YOUTUBE_TOKEN_FILE = Path(
 YOUTUBE_CATEGORY_ID = os.getenv("YOUTUBE_CATEGORY_ID", "24")  # 24 = Entertainment
 YOUTUBE_PRIVACY_STATUS = os.getenv("YOUTUBE_PRIVACY_STATUS", "private")
 YOUTUBE_MADE_FOR_KIDS = _env_bool("YOUTUBE_MADE_FOR_KIDS", False)
+# bot ထဲမှာ browser ဖွင့်လို့မရတာမို့ default false — `python main.py auth` ကို အရင် run ပါ
+YOUTUBE_INTERACTIVE = _env_bool("YOUTUBE_INTERACTIVE", False)
 YOUTUBE_LANGUAGE = os.getenv("YOUTUBE_LANGUAGE", "my")
 YOUTUBE_DEFAULT_AUDIO_LANGUAGE = os.getenv("YOUTUBE_DEFAULT_AUDIO_LANGUAGE", "my")
+
+# ---------------------------------------------------------------- ဇာတ်လမ်း အရှည်
+STORY_MIN_CHARS = int(os.getenv("STORY_MIN_CHARS", "20000"))
+STORY_MAX_CHARS = int(os.getenv("STORY_MAX_CHARS", "25000"))
+STORY_CHAPTER_CHARS = int(os.getenv("STORY_CHAPTER_CHARS", "1200"))  # အခန်းတစ်ခန်း ပျမ်းမျှ
+STORY_MAX_CHAPTERS = int(os.getenv("STORY_MAX_CHAPTERS", "30"))
+STORY_LANGUAGE = os.getenv("STORY_LANGUAGE", "my")
+
+# ---------------------------------------------------------------- အသံ (voice over)
+# auto | local | elevenlabs   (local = မြန်မာ TTS, elevenlabs = Charon စတဲ့ deep voice)
+TTS_PROVIDER = os.getenv("TTS_PROVIDER", "auto").strip().lower()
+TTS_COMMAND = os.getenv("TTS_COMMAND", "").strip()
+ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY", "")
+ELEVENLABS_VOICE_NAME = os.getenv("ELEVENLABS_VOICE_NAME", "Charon")
+ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID", "")
+ELEVENLABS_MODEL = os.getenv("ELEVENLABS_MODEL", "eleven_multilingual_v2")
+TTS_CHUNK_CHARS = int(os.getenv("TTS_CHUNK_CHARS", "2500"))   # တစ်ခါခေါ်မှာ စာလုံးအများဆုံး
+TTS_CONCURRENCY = int(os.getenv("TTS_CONCURRENCY", "2"))
+
+# ---------------------------------------------------------------- ပုံ / ဗီဒီယို
+SCENES_PER_CHAPTER = int(os.getenv("SCENES_PER_CHAPTER", "2"))
+IMAGE_CONCURRENCY = int(os.getenv("IMAGE_CONCURRENCY", "3"))
+VIDEO_WIDTH = int(os.getenv("VIDEO_WIDTH", "1280"))
+VIDEO_HEIGHT = int(os.getenv("VIDEO_HEIGHT", "720"))
+VIDEO_FPS = int(os.getenv("VIDEO_FPS", "30"))
 
 # ---------------------------------------------------------------- 業務ルール / limits
 TITLE_MAX_CHARS = 100          # YouTube hard limit
@@ -67,6 +94,18 @@ FORCE_MOCK = _env_bool("FORCE_MOCK", False)  # API key ရှိလည်း moc
 def llm_available() -> bool:
     """Gemini API key ရှိပြီး mock မဖြစ်မှ True."""
     return bool(GEMINI_API_KEY) and not FORCE_MOCK and not DRY_RUN
+
+
+def elevenlabs_available() -> bool:
+    return bool(ELEVENLABS_API_KEY)
+
+
+def story_target() -> tuple[int, int]:
+    """(min_chars, max_chars) — ဇာတ်လမ်း အရှည် ပစ်မှတ်။"""
+    low, high = STORY_MIN_CHARS, STORY_MAX_CHARS
+    if low > high:
+        low, high = high, low
+    return low, high
 
 
 def is_offline() -> bool:
