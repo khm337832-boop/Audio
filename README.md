@@ -34,6 +34,8 @@ pipeline.py                  # ★ အဆင့် ၂-၈ ကို စီစ�
 workflow.py                  # ★ PublishWorkflow (metadata → title → desc → thumbnail → upload)
 main.py                      # CLI: produce / publish / auth / title / metadata
 check_setup.py               # ဘာတွေ လိုနေလဲ စစ်ဆေးခြင်း
+setup_wizard.py              # .env wizard (python main.py setup)
+docs/YOUTUBE_AUTH_MM.md      # YouTube OAuth အဆင့်လိုက် လမ်းညွှန်
 config.py                    # .env + limit/threshold အားလုံး
 
 models/story.py              # Story / Chapter / StoryMetadata (+ story.json)
@@ -52,7 +54,7 @@ utils/
   textkit.py
 
 assets/fonts/                # Padauk (မြန်မာ) — SIL OFL
-tests/                       # 30 tests (network/API မလို)
+tests/                       # 41 tests (network/API မလို)
 ```
 
 ## စတင်ခြင်း
@@ -70,8 +72,39 @@ python check_setup.py           # ✅ ⚠️ ❌ စစ်ဆေးခြင်�
 |-----|---------|
 | `BOT_TOKEN` | Telegram bot |
 | `GEMINI_API_KEY` | ၂၀,၀၀၀+ စာလုံး ဇာတ်လမ်း၊ SEO၊ ပုံ prompt |
-| `TTS_COMMAND` **သို့** `ELEVENLABS_API_KEY` | voice over (မြန်မာ / deep voice) |
-| `client_secret.json` | YouTube တကယ်တင်ရန် |
+| `TTS_COMMAND` / `ELEVENLABS_API_KEY` | voice over — **မလိုအပ်ပါ**၊ `pip install edge-tts` က အခမဲ့ မြန်မာအသံ ပေးတယ် |
+| `client_secret.json` + `python main.py auth` | YouTube တကယ်တင်ရန် → [လမ်းညွှန်](docs/YOUTUBE_AUTH_MM.md) |
+
+## အသံ (voice over) — ရွေးချယ်စရာ ၄ မျိုး
+
+| Provider | key လိုသလား | မြန်မာ | မှတ်ချက် |
+|---|---|---|---|
+| **edge** (default) | ❌ မလို | ✅ `my-MM-NilarNeural` (အမ) / `my-MM-ThihaNeural` (အဖ) | `pip install edge-tts` — အခမဲ့၊ neural အသံ |
+| gtts | ❌ မလို | ✅ | အရန်၊ ရိုးရှင်း |
+| local | ❌ မလို | ✅ (ကိုယ်ပိုင်) | `TTS_COMMAND` (f5-myanmar-tts စသဖြင့်) |
+| elevenlabs | ✅ လို | ⚠️ ဘာသာစကား mixed | Charon deep voice |
+
+`TTS_PROVIDER=auto` ဆိုရင် — မြန်မာစာ: local → **edge** → gtts → elevenlabs၊
+အင်္ဂလိပ်: elevenlabs → edge → gtts → local။
+
+```bash
+pip install edge-tts          # ElevenLabs မလိုဘဲ မြန်မာအသံ ထွက်နိုင်တယ်
+# အသံရွေး (အမျိုးသား အသံ လိုရင်)
+EDGE_TTS_VOICE=my-MM-ThihaNeural
+```
+
+## အမြန်ဆုံး ပြင်ဆင်နည်း — `python main.py setup`
+
+`.env` ကို လက်နဲ့ မတည်းရအောင် wizard နဲ့ စစ်ပြီး သိမ်းနိုင်တယ်:
+
+```bash
+python main.py setup
+```
+
+- `BOT_TOKEN` ကို Telegram API နဲ့ တကယ် စစ် → `@your_bot` ပြ
+- `GEMINI_API_KEY` ကို Google API နဲ့ တကယ် စစ် → model list ပြ
+- အသံ ရွေး (1 = edge အခမဲ့ / 2 = f5 local / 3 = ElevenLabs)
+- မှားနေတဲ့ key ကို **မသိမ်း**ဘဲ သတိပေး၊ `.env` ထဲက တခြား key များ မပျက်
 
 ## YouTube တကယ်တင်ရန် (တစ်ခါသာ ပြင်ဆင်ရမယ်)
 
@@ -80,9 +113,15 @@ python check_setup.py           # ✅ ⚠️ ❌ စစ်ဆေးခြင်�
 3. **terminal မှာ တစ်ခါ run** —
 
 ```bash
-python main.py auth
+python main.py auth            # browser ပွင့်တဲ့ စက်အတွက်
+python main.py auth --manual   # browser မပွင့်ရင် (link copy → code paste)
+python main.py auth --status   # token အခြေအနေ
 # ✅ ချိတ်ဆက်ပြီး — channel: <သင့် channel> (subscribers: …)
 ```
+
+📖 **အဆင့်လိုက် လမ်းညွှန် (မြန်မာ): [`docs/YOUTUBE_AUTH_MM.md`](docs/YOUTUBE_AUTH_MM.md)**
+— Google Cloud project → API enable → consent screen → Desktop OAuth client →
+`client_secret.json` → `python main.py auth` → စမ်းသပ်။ ပြဿနာ ၈ မျိုးအတွက် ဖြေရှင်းနည်းပါ။
 
 token ကို `youtube-oauth2.json` မှာ သိမ်းထားတာမို့ bot က နောက်ပိုင်း browser မလိုဘဲ တင်နိုင်တယ်။
 (`YOUTUBE_INTERACTIVE=false` — bot ထဲမှာ browser ဖွင့်တာ မလုပ်ပါ)
@@ -157,6 +196,7 @@ temp/job_20260101_120000/
 ## Test
 
 ```bash
-pytest -q          # 30 tests (network/API/ffmpeg မလို — fake အဆင့်များ)
+pytest -q          # 41 tests (network/API/ffmpeg မလို — fake အဆင့်များ)
 python check_setup.py
+python main.py auth --status
 ```

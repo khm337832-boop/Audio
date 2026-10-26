@@ -250,12 +250,17 @@ def test_tts_provider_selection(monkeypatch):
     monkeypatch.setattr(config, "TTS_PROVIDER", "auto")
     monkeypatch.setattr(config, "TTS_COMMAND", "echo {output}")
     monkeypatch.setattr(config, "ELEVENLABS_API_KEY", "")
+    # TTS_COMMAND ရှိရင် မြန်မာအတွက် local ကို ဦးစားပေးတယ်
     assert tts_service.resolve_provider("my") == "local"
 
+    # local မရှိတော့ရင် key မလိုတဲ့ provider (edge/gtts) ကို ရွေးရမယ်
     monkeypatch.setattr(config, "TTS_COMMAND", "")
+    monkeypatch.setattr(tts_service, "local_available", lambda: False)
+    assert tts_service.resolve_provider("my") in {"edge", "gtts"}
+
+    # အင်္ဂလိပ်စာအတွက် ElevenLabs key ရှိရင် အဲဒါကို ဦးစားပေးတယ်
     monkeypatch.setattr(config, "ELEVENLABS_API_KEY", "key")
     assert tts_service.resolve_provider("en") == "elevenlabs"
-    assert tts_service.resolve_provider("my") == "elevenlabs"
 
     monkeypatch.setattr(config, "TTS_PROVIDER", "local")
     assert tts_service.resolve_provider("en") == "local"
@@ -286,3 +291,156 @@ def test_custom_target_chars_stops_at_target():
     assert story.target_chars == 4000
     assert story.total_chars >= 4000
     assert len(story.chapters) <= 4  # ၁၀ ခန်း မရေးဘဲ ပစ်မှတ်မှာ ရပ်တယ်
+
+
+# ------------------------------------------------------------------ providers (key မလို)
+def test_edge_and_gtts_registered(monkeypatch):
+    from services import tts_service
+
+    monkeypatch.setattr(config, "TTS_COMMAND", "")
+    monkeypatch.setattr(config, "ELEVENLABS_API_KEY", "")
+    providers = tts_service.available_providers()
+    assert "edge" in providers or "gtts" in providers
+    # မြန်မာစာအတွက် ElevenLabs မလိုဘဲ provider တစ်ခု ရွေးနိုင်ရမယ်
+    assert tts_service.resolve_provider("my") in {"edge", "gtts", "local"}
+    assert tts_service.resolve_provider("en") in {"edge", "gtts", "elevenlabs", "local"}
+
+
+def test_explicit_provider_choice_wins(monkeypatch):
+    from services import tts_service
+
+    monkeypatch.setattr(config, "TTS_PROVIDER", "gtts")
+    assert tts_service.resolve_provider("my") == "gtts"
+    monkeypatch.setattr(config, "TTS_PROVIDER", "edge")
+    assert tts_service.resolve_provider("en") == "edge"
+
+
+def test_edge_writes_mp3_and_is_default_for_myanmar(monkeypatch, tmp_path):
+    """edge provider ကို mock လုပ်ပြီး ဖိုင်ထွက်/ပေါင်းခြင်း အလုပ်လုပ်တာ စစ်တယ်။"""
+    from services import tts_service
+
+    monkeypatch.setattr(config, "TTS_PROVIDER", "edge")
+    calls = []
+
+    def fake_chunk(text, output_path, voice):
+        calls.append((text[:20], voice))
+        Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+        Path(output_path).write_bytes(b"ID3\x04\x00\x00")
+        return Path(output_path)
+
+    monkeypatch.setattr(tts_service, "_edge_chunk", fake_chunk)
+    # ffmpeg concat ကို ချော်ရန် part တစ်ခုတည်း ဖြစ်အောင် စာသားတို ပေး
+    out = tts_service.synthesize("မြစ်ကမ်းက မီးရောင်", tmp_path / "a.mp3", language="my")
+    assert out.exists() and calls
+    assert calls[0][1] == "my-MM-NilarNeural"
+
+
+def test_edge_voice_selection(monkeypatch):
+    from services import tts_service
+
+    monkeypatch.setattr(config, "EDGE_TTS_VOICE", "")
+    assert tts_service._edge_voice("my") == "my-MM-NilarNeural"
+    assert tts_service._edge_voice("en") == "en-US-AndrewNeural"
+    monkeypatch.setattr(config, "EDGE_TTS_VOICE", "my-MM-ThihaNeural")
+    assert tts_service._edge_voice("my") == "my-MM-ThihaNeural"
+
+
+# ------------------------------------------------------------------ setup wizard
+def test_env_write_preserves_other_keys(tmp_path):
+    from setup_wizard import read_env, write_env
+
+    env = tmp_path / ".env"
+    env.write_text(
+        "# comment\nBOT_TOKEN=old\nGEMINI_API_KEY=keepme\nTTS_PROVIDER=auto\n", "utf-8"
+    )
+    write_env({"BOT_TOKEN": "new-token"}, path=env)
+    values = read_env(env)
+    assert values["BOT_TOKEN"] == "new-token"
+    assert values["GEMINI_API_KEY"] == "keepme"
+    assert "# comment" in env.read_text("utf-8")
+
+
+def test_env_write_appends_missing_keys(tmp_path):
+    from setup_wizard import read_env, write_env
+
+    env = tmp_path / ".env"
+    env.write_text("BOT_TOKEN=x\n", "utf-8")
+    write_env({"EDGE_TTS_VOICE": "my-MM-NilarNeural"}, path=env)
+    assert read_env(env)["EDGE_TTS_VOICE"] == "my-MM-NilarNeural"
+
+
+def test_mask_hides_secret():
+    from setup_wizard import mask
+
+    hidden = mask("123456789:AAF-abcdefghijklmnop")
+    assert "abcdefghijklmnop" not in hidden
+    assert hidden.startswith("123456")
+
+
+def test_validate_bot_token_rejects_bad_format():
+    from setup_wizard import validate_bot_token
+
+    ok, detail = validate_bot_token("not-a-token")
+    assert ok is False and detail
+
+
+# ------------------------------------------------------------------ youtube auth helpers
+def test_describe_auth_status_without_files(tmp_path, monkeypatch):
+    from services import youtube_service
+
+    monkeypatch.setattr(config, "YOUTUBE_CLIENT_SECRETS", tmp_path / "nope.json")
+    monkeypatch.setattr(config, "YOUTUBE_TOKEN_FILE", tmp_path / "tok.json")
+    try:
+        info = youtube_service.describe_auth_status()
+    except youtube_service.YouTubeAuthError:
+        pytest.skip("google-api-python-client မထည့်ထားပါ")
+    assert info["client_secret"] is False
+    assert info["token_file"] is False
+
+
+def test_upload_without_token_gives_actionable_error(tmp_path, monkeypatch):
+    from services import youtube_service
+
+    monkeypatch.setattr(config, "YOUTUBE_CLIENT_SECRETS", tmp_path / "client_secret.json")
+    monkeypatch.setattr(config, "YOUTUBE_TOKEN_FILE", tmp_path / "tok.json")
+    monkeypatch.setattr(config, "YOUTUBE_INTERACTIVE", False)
+    video = tmp_path / "final.mp4"
+    video.write_bytes(b"\x00" * 1024)
+    try:
+        with pytest.raises(youtube_service.YouTubeAuthError) as excinfo:
+            youtube_service.upload_video(video, "t", "d", dry_run=False)
+    except youtube_service.YouTubeAuthError:
+        pytest.skip("google libs မရှိပါ")
+    assert "main.py auth" in str(excinfo.value)
+
+
+def test_generate_voice_falls_back_to_next_provider(monkeypatch, tmp_path):
+    """edge မရရင် နောက် provider (gtts) ကို အလိုအလျောက် ပြောင်းသုံးရမယ်။"""
+    from services import tts_service
+
+    monkeypatch.setattr(config, "TTS_PROVIDER", "edge")
+    monkeypatch.setattr(tts_service, "available_providers", lambda: ["edge", "gtts"])
+    monkeypatch.setattr(tts_service, "probe_duration", lambda path: 12.0)
+
+    calls: list[str] = []
+
+    def fake_synth(text, output_path, *, language=None, provider=None):
+        calls.append(provider)
+        if provider == "edge":
+            raise tts_service.TTSError("edge မရပါ (စမ်းသပ်)")
+        Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+        Path(output_path).write_bytes(b"ID3\x04\x00\x00")
+        return Path(output_path)
+
+    monkeypatch.setattr(tts_service, "synthesize", fake_synth)
+    monkeypatch.setattr(tts_service, "_concat_audio", lambda paths, out: paths[0])
+
+    story = Story(
+        story_id="s", title="t", genre="g", language="my", full_text="",
+        chapters=[Chapter(index=i, title=f"အခန်း {i + 1}", text="စာသား " * 30) for i in range(2)],
+    )
+    audio, info = tts_service.generate_voice(story, work_dir=tmp_path)
+    assert calls[0] == "edge" and "gtts" in calls
+    assert Path(audio).exists()
+    assert info[0]["provider"] == "gtts"     # ပြောင်းသုံးတာ မှတ်ထားတယ်
+    assert all(chapter.duration == 12.0 for chapter in story.chapters)

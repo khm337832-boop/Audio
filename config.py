@@ -51,6 +51,7 @@ YOUTUBE_PRIVACY_STATUS = os.getenv("YOUTUBE_PRIVACY_STATUS", "private")
 YOUTUBE_MADE_FOR_KIDS = _env_bool("YOUTUBE_MADE_FOR_KIDS", False)
 # bot ထဲမှာ browser ဖွင့်လို့မရတာမို့ default false — `python main.py auth` ကို အရင် run ပါ
 YOUTUBE_INTERACTIVE = _env_bool("YOUTUBE_INTERACTIVE", False)
+YOUTUBE_OAUTH_PORT = int(os.getenv("YOUTUBE_OAUTH_PORT", "8085"))
 YOUTUBE_LANGUAGE = os.getenv("YOUTUBE_LANGUAGE", "my")
 YOUTUBE_DEFAULT_AUDIO_LANGUAGE = os.getenv("YOUTUBE_DEFAULT_AUDIO_LANGUAGE", "my")
 
@@ -71,6 +72,11 @@ ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID", "")
 ELEVENLABS_MODEL = os.getenv("ELEVENLABS_MODEL", "eleven_multilingual_v2")
 TTS_CHUNK_CHARS = int(os.getenv("TTS_CHUNK_CHARS", "2500"))   # တစ်ခါခေါ်မှာ စာလုံးအများဆုံး
 TTS_CONCURRENCY = int(os.getenv("TTS_CONCURRENCY", "2"))
+
+# Microsoft Edge TTS (key မလို၊ အခမဲ့) — မြန်မာ: my-MM-NilarNeural / my-MM-ThihaNeural
+EDGE_TTS_VOICE = os.getenv("EDGE_TTS_VOICE", "")
+EDGE_TTS_RATE = os.getenv("EDGE_TTS_RATE", "+0%")
+EDGE_TTS_VOLUME = os.getenv("EDGE_TTS_VOLUME", "+0%")
 
 # ---------------------------------------------------------------- ပုံ / ဗီဒီယို
 SCENES_PER_CHAPTER = int(os.getenv("SCENES_PER_CHAPTER", "2"))

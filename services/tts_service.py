@@ -1,11 +1,14 @@
 """Voice over — အခန်းတစ်ခန်းစီကို အသံထွက်ပြီး တစ်ဖိုင်တည်း ပေါင်းပေးတယ်။
 
-Provider ၂ မျိုး:
-  • **elevenlabs** — Charon စတဲ့ deep voice (အင်္ဂလိပ်/ဘာသာစကားများ)
-  • **local**      — မြန်မာ TTS (f5-myanmar-tts စတဲ့ CLI) `TTS_COMMAND` template နဲ့
+Provider ၄ မျိုး:
+  • **local**      — မြန်မာ TTS CLI (f5-myanmar-tts စသဖြင့်) `TTS_COMMAND` template နဲ့
+  • **edge**       — Microsoft Edge TTS (key မလို၊ အခမဲ့၊ `my-MM-NilarNeural`) ← မြန်မာအတွက် default
+  • **gtts**       — Google Translate TTS (key မလို၊ အခမဲ့၊ ရိုးရှင်း)
+  • **elevenlabs** — Charon စတဲ့ deep voice (API key လိုတယ်)
 
-`.env` ရဲ့ `TTS_PROVIDER` = auto | elevenlabs | local
-  auto → မြန်မာစာသားဆိုရင် local ကို ဦးစားပေး၊ အင်္ဂလိပ်ဆိုရင် ElevenLabs
+`.env` ရဲ့ `TTS_PROVIDER` = auto | edge | gtts | local | elevenlabs
+  auto → မြန်မာစာသား: local → edge → gtts → elevenlabs
+         အင်္ဂလိပ်စာသား: elevenlabs → edge → gtts → local
 """
 
 from __future__ import annotations
@@ -56,24 +59,61 @@ def elevenlabs_available() -> bool:
     return bool(config.ELEVENLABS_API_KEY)
 
 
+def edge_available() -> bool:
+    return importlib.util.find_spec("edge_tts") is not None
+
+
+def gtts_available() -> bool:
+    return importlib.util.find_spec("gtts") is not None
+
+
+def available_providers() -> list[str]:
+    """စက်မှာ တကယ် အလုပ်လုပ်နိုင်တဲ့ provider များ။"""
+    found: list[str] = []
+    if local_available():
+        found.append("local")
+    if edge_available():
+        found.append("edge")
+    if gtts_available():
+        found.append("gtts")
+    if elevenlabs_available():
+        found.append("elevenlabs")
+    return found
+
+
 def resolve_provider(language: str | None = None) -> str:
     """ဘယ် provider ကို သုံးမလဲ ဆုံးဖြတ်တယ်။"""
     choice = (config.TTS_PROVIDER or "auto").lower()
-    if choice in {"elevenlabs", "local"}:
+    if choice in {"elevenlabs", "local", "edge", "gtts"}:
         return choice
+
     is_myanmar = (language or "my").startswith("my")
     if is_myanmar:
-        if local_available():
-            return "local"
-        if elevenlabs_available():
-            logger.warning(
-                "မြန်မာ TTS မရှိပါ — ElevenLabs (%s) နဲ့ ထွက်မယ်။ မြန်မာစာအတွက် "
-                "eleven_multilingual_v2 ကို သုံးပါ။", config.ELEVENLABS_VOICE_NAME,
-            )
-            return "elevenlabs"
-        return "local"
-    if elevenlabs_available():
-        return "elevenlabs"
+        # အရည်အသွေး အစဉ်လိုက်: fine-tuned local → edge (neural) → gtts → elevenlabs
+        for candidate, ok in (
+            ("local", local_available()),
+            ("edge", edge_available()),
+            ("gtts", gtts_available()),
+            ("elevenlabs", elevenlabs_available()),
+        ):
+            if ok:
+                if candidate == "elevenlabs":
+                    logger.warning(
+                        "မြန်မာ TTS မရှိပါ — ElevenLabs (%s) နဲ့ ထွက်မယ်။ "
+                        "အခမဲ့ မြန်မာအသံအတွက် `pip install edge-tts` လုပ်ပါ။",
+                        config.ELEVENLABS_VOICE_NAME,
+                    )
+                return candidate
+        return "local"  # ဘာမှမရှိ — error မက်ဆေ့ချ်နဲ့ လမ်းညွှန်ပြမယ်
+
+    for candidate, ok in (
+        ("elevenlabs", elevenlabs_available()),
+        ("edge", edge_available()),
+        ("gtts", gtts_available()),
+        ("local", local_available()),
+    ):
+        if ok:
+            return candidate
     return "local"
 
 
@@ -146,8 +186,10 @@ def _run_local_tts(text: str, output_path: Path) -> Path:
     template = config.TTS_COMMAND
     if not template:
         raise TTSError(
-            "မြန်မာ TTS engine မသတ်မှတ်ထားပါ — `.env` မှာ TTS_COMMAND သတ်မှတ်ပါ။\n"
-            'ဥပမာ: TTS_COMMAND="f5-tts_infer --gen_text_file {text_file} --output {output}"'
+            "TTS engine မသတ်မှတ်ထားပါ။ ရွေးချယ်နည်း ၂ မျိုး —\n"
+            "  ① အခမဲ့ (အကြံပြု): pip install edge-tts  → မြန်မာ neural voice (key မလို)\n"
+            "  ② ကိုယ်ပိုင် TTS: .env မှာ TTS_COMMAND သတ်မှတ်ပါ\n"
+            '     ဥပမာ: TTS_COMMAND="f5-tts_infer --gen_text_file {text_file} --output {output}"'
         )
     output_path.parent.mkdir(parents=True, exist_ok=True)
     text_file = output_path.with_suffix(".txt")
@@ -259,6 +301,117 @@ def _run_elevenlabs(text: str, output_path: Path) -> Path:
             pass
 
 
+# ===================================================================== edge (key မလို)
+EDGE_VOICES = {
+    "my": ["my-MM-NilarNeural", "my-MM-ThihaNeural"],
+    "en": ["en-US-AndrewNeural", "en-US-AriaNeural"],
+}
+
+
+def _edge_voice(language: str) -> str:
+    if config.EDGE_TTS_VOICE:
+        return config.EDGE_TTS_VOICE
+    voices = EDGE_VOICES.get((language or "my")[:2], EDGE_VOICES["en"])
+    return voices[0]
+
+
+def _edge_chunk(text: str, output_path: Path, voice: str) -> Path:
+    import asyncio
+
+    import edge_tts
+
+    async def _save() -> None:
+        communicate = edge_tts.Communicate(
+            text, voice,
+            rate=config.EDGE_TTS_RATE,
+            volume=config.EDGE_TTS_VOLUME,
+        )
+        await communicate.save(str(output_path))
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    last_error = ""
+    for attempt in range(3):
+        try:
+            asyncio.run(_save())
+        except Exception as exc:  # network/websocket
+            last_error = str(exc)
+            time.sleep(2 + attempt * 3)
+            continue
+        if output_path.exists() and output_path.stat().st_size > 0:
+            return output_path
+        last_error = "ဖိုင် ဗလာ ထွက်တယ်"
+    raise TTSError(
+        f"Edge TTS မအောင်မြင်ပါ: {last_error}\n"
+        "(အင်တာနက် ချိတ်ဆက်မှု စစ်ပါ — speech.platform.bing.com ကို ရောက်ရမယ်)"
+    )
+
+
+def _run_edge(text: str, output_path: Path, language: str) -> Path:
+    voice = _edge_voice(language)
+    pieces = split_text(text, 3000)
+    if not pieces:
+        raise TTSError("အသံထွက်ရန် စာသား မရှိပါ")
+
+    tmp_dir = output_path.parent / f".{output_path.stem}_edge"
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+    parts: list[Path] = []
+    try:
+        for i, piece in enumerate(pieces):
+            part = tmp_dir / f"part_{i:03d}.mp3"
+            if not part.exists() or part.stat().st_size == 0:
+                _edge_chunk(piece, part, voice)
+            parts.append(part)
+        return _concat_audio(parts, output_path)
+    finally:
+        for part in parts:
+            part.unlink(missing_ok=True)
+        try:
+            tmp_dir.rmdir()
+        except OSError:
+            pass
+
+
+# ===================================================================== gTTS (key မလို)
+_GTTS_LANG = {"my": "my", "en": "en"}
+
+
+def _run_gtts(text: str, output_path: Path, language: str) -> Path:
+    from gtts import gTTS
+
+    lang = _GTTS_LANG.get((language or "my")[:2], "my")
+    pieces = split_text(text, 180)  # gTTS က စာလုံးနည်းနည်းမှ ပိုမှန်
+    if not pieces:
+        raise TTSError("အသံထွက်ရန် စာသား မရှိပါ")
+
+    tmp_dir = output_path.parent / f".{output_path.stem}_gtts"
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+    parts: list[Path] = []
+    try:
+        for i, piece in enumerate(pieces):
+            part = tmp_dir / f"part_{i:03d}.mp3"
+            ok = False
+            for attempt in range(3):
+                try:
+                    gTTS(text=piece, lang=lang, slow=False).save(str(part))
+                    ok = part.exists() and part.stat().st_size > 0
+                except Exception as exc:
+                    logger.warning("gTTS အပိုင်း %s မရပါ (%s)", i, exc)
+                    time.sleep(1 + attempt * 2)
+                if ok:
+                    break
+            if not ok:
+                raise TTSError("gTTS မအောင်မြင်ပါ — အင်တာနက် ချိတ်ဆက်မှု စစ်ပါ")
+            parts.append(part)
+        return _concat_audio(parts, output_path)
+    finally:
+        for part in parts:
+            part.unlink(missing_ok=True)
+        try:
+            tmp_dir.rmdir()
+        except OSError:
+            pass
+
+
 # ===================================================================== public
 def synthesize(
     text: str,
@@ -269,10 +422,25 @@ def synthesize(
 ) -> Path:
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    provider = provider or resolve_provider(language or detect_language(text))
+    language = language or detect_language(text)
+    provider = provider or resolve_provider(language)
     if provider == "elevenlabs":
         return _run_elevenlabs(text, output_path)
+    if provider == "edge":
+        return _run_edge(text, output_path, language)
+    if provider == "gtts":
+        return _run_gtts(text, output_path, language)
     return _run_local_tts(text, output_path)
+
+
+def provider_chain(language: str | None = None) -> list[str]:
+    """ပထမ ရွေးထားတဲ့ provider + အရန် provider များ (ရှိတာသာ)။"""
+    primary = resolve_provider(language)
+    chain = [primary]
+    for candidate in available_providers():
+        if candidate not in chain:
+            chain.append(candidate)
+    return chain
 
 
 def generate_voice(
@@ -287,8 +455,10 @@ def generate_voice(
         raise TTSError("ဇာတ်လမ်းမှာ အခန်း မရှိပါ")
 
     language = story.language or detect_language(story.full_text)
-    provider = provider or resolve_provider(language)
-    suffix = ".mp3" if provider == "elevenlabs" else ".wav"
+    chain = [provider] + [p for p in provider_chain(language) if p != provider] if provider \
+        else provider_chain(language)
+    provider = chain[0]
+    suffix = ".wav" if provider == "local" else ".mp3"
 
     base = Path(work_dir) if work_dir else (
         Path(os.getenv("TEMP_DIR", str(config.TEMP_DIR))) / story.story_id
@@ -299,12 +469,37 @@ def generate_voice(
     chapter_info: list[dict] = []
     paths: list[Path] = []
     total = len(story.chapters)
+    errors: list[str] = []
+
     for i, chapter in enumerate(story.chapters, start=1):
+        suffix = ".wav" if provider == "local" else ".mp3"
         out = audio_dir / f"chapter_{chapter.index:02d}{suffix}"
         if not out.exists() or out.stat().st_size == 0:
             if progress:
                 progress(f"🎙️ အသံထွက် {i}/{total} ({provider})…")
-            synthesize(chapter.text, out, language=language, provider=provider)
+            last_error: Exception | None = None
+            for candidate in chain:
+                suffix = ".wav" if candidate == "local" else ".mp3"
+                target = audio_dir / f"chapter_{chapter.index:02d}{suffix}"
+                try:
+                    synthesize(chapter.text, target, language=language, provider=candidate)
+                except TTSError as exc:
+                    last_error = exc
+                    errors.append(f"{candidate}: {exc}")
+                    logger.warning("provider '%s' မရပါ (%s) — နောက်တစ်ခုကို စမ်းမယ်", candidate, exc)
+                    continue
+                if candidate != provider:
+                    logger.info("provider '%s' → '%s' ကို ပြောင်းသုံးမယ်", provider, candidate)
+                    provider = candidate  # ကျန်အခန်းများအတွက် မှတ်ထား
+                out = target
+                last_error = None
+                break
+            if last_error is not None:
+                raise TTSError(
+                    "အသံထွက် မအောင်မြင်ပါ — provider အားလုံး မရပါ:\n"
+                    + "\n".join(errors[-4:])
+                    + "\n\n💡 အလွယ်ဆုံး: pip install edge-tts (အခမဲ့၊ key မလို)"
+                )
         duration = probe_duration(out) or estimate_duration(chapter.text)
         chapter.duration = duration
         chapter.audio_path = str(out)
@@ -319,10 +514,14 @@ def generate_voice(
 
 
 __all__ = [
+    "EDGE_VOICES",
     "MediaError",
     "TTSError",
+    "available_providers",
     "detect_language",
+    "edge_available",
     "elevenlabs_available",
+    "gtts_available",
     "estimate_duration",
     "generate_voice",
     "local_available",

@@ -143,14 +143,19 @@ async def run_full_pipeline(
         report = "\n".join(pipeline.stage_report())
         hint = ""
         text = str(exc)
-        if "TTS" in text:
+        if "TTS" in text or "voice" in text.lower():
             hint = (
-                "\n\n💡 မြန်မာ TTS အတွက် `.env` မှာ "
-                "<code>TTS_COMMAND</code> သတ်မှတ်ပါ (သို့) "
-                "<code>TTS_PROVIDER=elevenlabs</code> + <code>ELEVENLABS_API_KEY</code> ထည့်ပါ"
+                "\n\n💡 အသံထွက် မရပါ — အလွယ်ဆုံး: <code>pip install edge-tts</code> "
+                "(အခမဲ့၊ key မလို၊ မြန်မာ neural voice)"
+                "\nသို့ <code>TTS_PROVIDER=elevenlabs</code> + "
+                "<code>ELEVENLABS_API_KEY</code>"
             )
-        elif "YouTube" in text or "OAuth" in text:
-            hint = "\n\n💡 YouTube တင်ရန် <code>client_secret.json</code> လိုပါ (သို့) dry-run သုံးပါ"
+        elif "YouTube" in text or "OAuth" in text or "token" in text:
+            hint = (
+                "\n\n💡 YouTube တင်ရန် <code>client_secret.json</code> + "
+                "<code>python main.py auth</code> လိုပါ"
+                "\nလမ်းညွှန်: <code>docs/YOUTUBE_AUTH_MM.md</code> (သို့) dry-run သုံးပါ"
+            )
         elif "ffmpeg" in text:
             hint = "\n\n💡 <code>sudo apt install ffmpeg</code>"
         await _safe_edit(status, f"❌ မအောင်မြင်ပါ\n{text}{hint}" + (f"\n\n{report}" if report else ""))

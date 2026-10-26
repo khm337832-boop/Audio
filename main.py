@@ -60,7 +60,14 @@ def _build_parser() -> argparse.ArgumentParser:
     title.add_argument("--job-dir", required=True)
     title.add_argument("--count", type=int, default=3)
 
-    sub.add_parser("auth", help="YouTube OAuth တစ်ခါ ခွင့်ပြုချက်ယူပြီး token သိမ်းမယ်")
+    auth = sub.add_parser("auth", help="YouTube OAuth တစ်ခါ ခွင့်ပြုချက်ယူပြီး token သိမ်းမယ်")
+    auth.add_argument("--manual", action="store_true",
+                      help="browser မဖွင့်နိုင်ရင် — link ကို copy လုပ်ပြီး code paste လုပ်တဲ့ နည်း")
+    auth.add_argument("--port", type=int, help=f"localhost port (default {config.YOUTUBE_OAUTH_PORT})")
+    auth.add_argument("--client-secret", help="client_secret.json ဖိုင်လမ်းကြောင်း")
+    auth.add_argument("--status", action="store_true", help="လက်ရှိ token အခြေအနေ ကြည့်")
+
+    sub.add_parser("setup", help="BOT_TOKEN / GEMINI_API_KEY ကို စစ်ပြီး .env ထဲ သိမ်းမယ်")
 
     meta = sub.add_parser("metadata", help="ဇာတ်လမ်းအနှစ်ချုပ်နဲ့ အခန်းအချက်အလက် ပြမယ်")
     meta.add_argument("--job-dir", required=True)
@@ -162,12 +169,66 @@ def cmd_title(args: argparse.Namespace) -> int:
     return 0
 
 
+def _print_auth_help() -> None:
+    print(
+        """
+📋 YouTube OAuth အတွက် ကြိုတင်ပြင်ဆင်ရန် (တစ်ခါသာ)
+────────────────────────────────────────────
+၁။ https://console.cloud.google.com → project အသစ် ဖန်တီး
+၂။ APIs & Services → Library → “YouTube Data API v3” → Enable
+၃။ OAuth consent screen → External → app name/email ဖြည့်
+    → Test users မှာ သင့် Gmail ကို ထည့် (မဖြစ်မနေ)
+၄။ Credentials → Create credentials → OAuth client ID
+    → Application type: “Desktop app” → Create → Download JSON
+၅။ ဒေါင်းလုပ်ထားတဲ့ ဖိုင်ကို client_secret.json နာမည်ပြောင်းပြီး
+    ဒီ folder (repo root) ထဲ ထည့်ပါ
+၆။ ပြီးရင် — python main.py auth
+────────────────────────────────────────────
+အဆင့်လိုက် ရုပ်ပုံလို လမ်းညွှန်: docs/YOUTUBE_AUTH_MM.md
+""".strip()
+    )
+
+
+def cmd_setup(args: argparse.Namespace) -> int:
+    from setup_wizard import run_wizard
+
+    return run_wizard()
+
+
 def cmd_auth(args: argparse.Namespace) -> int:
-    """`python main.py auth` — browser မှာ Google ခွင့်ပြုချက် ယူပြီး token သိမ်းတယ်။"""
+    """`python main.py auth` — Google ခွင့်ပြုချက် ယူပြီး token သိမ်းတယ်။"""
     from services import youtube_service
 
+    if args.status:
+        try:
+            info = youtube_service.describe_auth_status()
+        except Exception as exc:  # noqa: BLE001
+            logger.error("စစ်မရပါ: %s", exc)
+            return 1
+        print(f"client_secret.json: {'✅ ရှိ' if info['client_secret'] else '❌ မရှိ'}")
+        print(f"youtube-oauth2.json: {'✅ ရှိ' if info['token_file'] else '❌ မရှိ'}")
+        if info["token_file"]:
+            print(f"  သက်တမ်းကုန်: {info['expired']} | refresh token: {info['has_refresh']}")
+        if not info["token_file"]:
+            _print_auth_help()
+        return 0
+
+    client_secret = Path(args.client_secret) if args.client_secret else None
+    if client_secret:
+        config.YOUTUBE_CLIENT_SECRETS = client_secret
+    if not Path(config.YOUTUBE_CLIENT_SECRETS).exists():
+        print(f"❌ client_secret.json မတွေ့ပါ: {config.YOUTUBE_CLIENT_SECRETS}")
+        _print_auth_help()
+        return 1
+
+    print("🔐 Google ခွင့်ပြုချက် ယူနေတယ်…")
     try:
-        youtube = youtube_service.get_authenticated_service(interactive=True)
+        youtube = youtube_service.get_authenticated_service(
+            client_secret_file=client_secret,
+            interactive="manual" if args.manual else True,
+            force_manual=args.manual,
+            port=args.port,
+        )
         response = youtube.channels().list(part="snippet,statistics", mine=True).execute()
         items = response.get("items", [])
         if items:
@@ -175,8 +236,11 @@ def cmd_auth(args: argparse.Namespace) -> int:
             subs = items[0].get("statistics", {}).get("subscriberCount", "?")
             print(f"✅ ချိတ်ဆက်ပြီး — channel: {channel} (subscribers: {subs})")
         else:
-            print("✅ token သိမ်းပြီး (channel မတွေ့ပါ — YouTube channel ရှိမရှိ စစ်ပါ)")
+            print("⚠️ token သိမ်းပြီး ဒါပေမယ့် channel မတွေ့ပါ —")
+            print("   YouTube channel တစ်ခု ဖန်တီးထားဖို့ လိုတယ် (youtube.com → Create channel)")
         print(f"🔑 token: {config.YOUTUBE_TOKEN_FILE}")
+        print("\n👉 စမ်းသပ်ရန်: python main.py publish --job-dir temp/real_test --privacy private")
+        print("   (quota: တစ်ရက် 10,000 units — upload တစ်ခု ~1,600 units ≈ ၆ ခု/ရက်)")
         return 0
     except Exception as exc:  # noqa: BLE001
         logger.error("OAuth မအောင်မြင်ပါ: %s", exc)
@@ -191,9 +255,12 @@ def cmd_metadata(args: argparse.Namespace) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
-    Path(args.job_dir).mkdir(parents=True, exist_ok=True)
+    job_dir = getattr(args, "job_dir", None)
+    if job_dir:
+        Path(job_dir).mkdir(parents=True, exist_ok=True)
     handlers = {
         "produce": cmd_produce,
+        "setup": cmd_setup,
         "auth": cmd_auth,
         "publish": cmd_publish,
         "title": cmd_title,

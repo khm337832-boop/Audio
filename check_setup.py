@@ -88,15 +88,27 @@ def main() -> int:
 
     from services import tts_service
 
+    if tts_service.edge_available():
+        add(OK, "edge-tts (အခမဲ့ မြန်မာအသံ)", "my-MM-NilarNeural — key မလို")
+    else:
+        add(WARN, "edge-tts", "မရှိ — အခမဲ့ မြန်မာအသံ မရနိုင်", "pip install edge-tts")
+
+    if tts_service.gtts_available():
+        add(OK, "gTTS (အရန်)", "key မလို")
+    else:
+        add(WARN, "gTTS", "မရှိ (မလိုအပ်ပါ)", "pip install gTTS")
+
+    have_free = tts_service.edge_available() or tts_service.gtts_available()
     if tts_service.local_available():
-        add(OK, "မြန်မာ TTS (local)", config.TTS_COMMAND[:50] + "…" if config.TTS_COMMAND
+        add(OK, "ကိုယ်ပိုင် TTS (local)", config.TTS_COMMAND[:50] + "…" if config.TTS_COMMAND
             else "f5-myanmar-tts တွေ့ပြီး (TTS_COMMAND မသတ်မှတ်ရသေး)")
         if not config.TTS_COMMAND:
             add(WARN, "TTS_COMMAND", "မသတ်မှတ်ရသေး",
                 '.env: TTS_COMMAND="f5-tts_infer --gen_text_file {text_file} --output {output}"')
     else:
-        add(FAIL, "မြန်မာ TTS (local)", "မရှိပါ",
-            "pip install f5-myanmar-tts ပြီး TTS_COMMAND သတ်မှတ်ပါ")
+        add(WARN if have_free else FAIL, "ကိုယ်ပိုင် TTS (local)",
+            "မရှိ — မလိုအပ်ပါ (edge-tts ကို သုံးမယ်)" if have_free else "မရှိပါ",
+            "လိုရင်: pip install f5-myanmar-tts + TTS_COMMAND")
 
     if config.ELEVENLABS_API_KEY:
         add(OK, "ElevenLabs (deep voice)",
@@ -106,7 +118,8 @@ def main() -> int:
             "ELEVENLABS_API_KEY ထည့်ပါ (Charon voice)")
 
     provider = tts_service.resolve_provider("my")
-    add(OK if provider == "local" else WARN, "မြန်မာစာအတွက် provider", provider)
+    add(OK, "မြန်မာစာအတွက် provider", provider)
+    add(OK, "အသုံးပြုနိုင်တဲ့ provider", ", ".join(tts_service.available_providers()) or "—")
 
     print("\n=== ⑤ Telegram / API key ===")
     env_file = Path(".env")
@@ -133,10 +146,10 @@ def main() -> int:
             add(OK, "youtube-oauth2.json", "OAuth token cache ရှိပြီး — bot တိုက်ရိုက် တင်နိုင်တယ်")
         else:
             add(WARN, "youtube-oauth2.json", "token မရှိသေး — bot က dry-run ပဲ လုပ်နိုင်တယ်",
-                "python main.py auth  (တစ်ခါသာ)")
+                "python main.py auth  (တစ်ခါသာ) — လမ်းညွှန်: docs/YOUTUBE_AUTH_MM.md")
     else:
-        add(FAIL if not config.DRY_RUN else WARN, "client_secret.json", "မရှိပါ",
-            "DRY_RUN=true ဆိုရင် မလိုပါ။ တကယ်တင်ရန် Google Cloud Console ကနေ OAuth client ဖန်တီးပါ")
+        add(WARN, "client_secret.json", "မရှိပါ (dry-run မှာ မလို)",
+            "လမ်းညွှန်: docs/YOUTUBE_AUTH_MM.md → ပြီးရင် python main.py auth")
 
     print("\n=== ⑦ Thumbnail render စမ်းသပ်မှု ===")
     try:
@@ -176,8 +189,7 @@ def main() -> int:
 
         if any("TTS" in name for _, name, _, _ in fails):
             print("\n👉 TTS မရှိသေးလို့ အဆင့် ③ (voice over) ကို မလုပ်နိုင်ပါ။")
-            print("   • မြန်မာ: TTS_COMMAND သတ်မှတ်ပါ")
-            print("   • အင်္ဂလိပ်/deep voice: ELEVENLABS_API_KEY ထည့်ပါ")
+            print("   အလွယ်ဆုံး: pip install edge-tts   (အခမဲ့၊ key မလို)")
         if any("client_secret" in name for _, name, _, _ in fails):
             print("\n👉 YouTube မတင်နိုင်သေးပါ — dry-run နဲ့ စမ်းနိုင်တယ်:")
             print("    python main.py produce --dry-run")
