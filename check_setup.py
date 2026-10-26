@@ -216,5 +216,64 @@ def main() -> int:
     return 0
 
 
+def compact_report() -> str:
+    """Secrets မပါဘဲ ကူးထည့်ပြီး ပို့နိုင်တဲ့ အခြေအနေ အကျဉ်းချုပ် (bot/agent ကို ပြရန်)။"""
+    import platform
+
+    import config
+    from services import media, tts_service
+
+    lines = ["=== AUDIO-BOT REPORT ===", f"python {platform.python_version()} · {platform.system()}"]
+
+    def flag(ok: bool) -> str:
+        return "yes" if ok else "no"
+
+    lines.append(f"env_file={flag(Path('.env').is_file())}")
+    lines.append(f"bot_token={'set' if config.BOT_TOKEN else 'missing'}")
+    lines.append(f"gemini_key={'set' if config.GEMINI_API_KEY else 'missing'}")
+    lines.append(f"dry_run={config.DRY_RUN} force_mock={config.FORCE_MOCK}")
+
+    try:
+        from services import youtube_service as ys
+
+        info = ys.client_secret_info()
+        if info["exists"]:
+            lines.append(
+                f"client_secret=present type={info.get('type') or 'unknown'} "
+                f"project={info.get('project_id') or '-'}"
+            )
+            if info.get("redirect_uris"):
+                lines.append(f"redirect_uris={','.join(info['redirect_uris'])}")
+            lines.append(f"auth_redirect_chosen={ys.pick_redirect_uri(info)}")
+            if info.get("error"):
+                lines.append(f"client_secret_error={info['error']}")
+        else:
+            lines.append("client_secret=missing")
+        try:
+            status = ys.describe_auth_status()
+            lines.append(
+                f"oauth_token={flag(bool(status['token_file']))} "
+                f"expired={status['expired']} refresh={status['has_refresh']}"
+            )
+        except Exception as exc:  # noqa: BLE001
+            lines.append(f"oauth_token=error:{type(exc).__name__}")
+    except Exception as exc:  # noqa: BLE001
+        lines.append(f"youtube_module=error:{type(exc).__name__}")
+
+    providers = tts_service.available_providers()
+    lines.append(f"tts_providers={','.join(providers) or 'none'}")
+    lines.append(f"tts_provider_for_my={tts_service.resolve_provider('my')}")
+    lines.append(f"tts_command={'set' if config.TTS_COMMAND else 'empty'}")
+    lines.append(f"ffmpeg={'yes' if media.ffmpeg_available() else 'no'}")
+    lines.append(f"shaping={'raqm' if __import__('utils.textrender', fromlist=['x']).raqm_available() else 'uharfbuzz'}")
+    lines.append(f"fonts={'yes' if Path('assets/fonts/Padauk-Bold.ttf').is_file() else 'no'}")
+    lines.append(f"story_target={config.STORY_MIN_CHARS}-{config.STORY_MAX_CHARS}")
+    lines.append("=== END REPORT ===")
+    return "\n".join(lines)
+
+
 if __name__ == "__main__":
+    if "--report" in sys.argv:
+        print(compact_report())
+        sys.exit(0)
     sys.exit(main())

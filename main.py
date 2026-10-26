@@ -70,6 +70,7 @@ def _build_parser() -> argparse.ArgumentParser:
     auth.add_argument("--status", action="store_true", help="လက်ရှိ token အခြေအနေ ကြည့်")
 
     sub.add_parser("setup", help="BOT_TOKEN / GEMINI_API_KEY ကို စစ်ပြီး .env ထဲ သိမ်းမယ်")
+    sub.add_parser("doctor", help="အဆင်သင့်ဖြစ်မှု အကျဉ်းချုပ် (secrets မပါ — ကူးပို့နိုင်တယ်)")
 
     meta = sub.add_parser("metadata", help="ဇာတ်လမ်းအနှစ်ချုပ်နဲ့ အခန်းအချက်အလက် ပြမယ်")
     meta.add_argument("--job-dir", required=True)
@@ -197,6 +198,13 @@ def cmd_setup(args: argparse.Namespace) -> int:
     return run_wizard()
 
 
+def cmd_doctor(args: argparse.Namespace) -> int:
+    from check_setup import compact_report
+
+    print(compact_report())
+    return 0
+
+
 def cmd_auth(args: argparse.Namespace) -> int:
     """`python main.py auth` — Google ခွင့်ပြုချက် ယူပြီး token သိမ်းတယ်။"""
     from services import youtube_service
@@ -288,6 +296,7 @@ def main(argv: list[str] | None = None) -> int:
     handlers = {
         "produce": cmd_produce,
         "setup": cmd_setup,
+        "doctor": cmd_doctor,
         "auth": cmd_auth,
         "publish": cmd_publish,
         "title": cmd_title,
