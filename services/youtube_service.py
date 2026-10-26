@@ -285,7 +285,54 @@ def _import_oauth():
     return Request, Credentials, InstalledAppFlow, build
 
 
-def build_local_server_flow(client_secret_file: str | Path | None = None, port: int | None = None):
+def client_secret_info(client_secret_file: str | Path | None = None) -> dict[str, Any]:
+    """`client_secret.json` ရဲ့ အမျိုးအစား (installed/web) နဲ့ redirect URIs ကို ဖတ်တယ်။"""
+    path = Path(client_secret_file or config.YOUTUBE_CLIENT_SECRETS)
+    info: dict[str, Any] = {
+        "path": str(path), "exists": path.exists(), "type": None,
+        "redirect_uris": [], "project_id": None,
+    }
+    if not path.exists():
+        return info
+    try:
+        data = json.loads(path.read_text("utf-8"))
+    except Exception as exc:  # noqa: BLE001
+        info["error"] = f"JSON ဖတ်မရပါ: {exc}"
+        return info
+    for kind in ("installed", "web"):
+        if kind in data:
+            block = data[kind] or {}
+            info["type"] = kind
+            info["redirect_uris"] = list(block.get("redirect_uris") or [])
+            info["project_id"] = block.get("project_id")
+            break
+    else:
+        info["error"] = "installed/web key မတွေ့ပါ — OAuth client JSON မှန်/မမှန် စစ်ပါ"
+    return info
+
+
+def pick_redirect_uri(
+    info: dict[str, Any], port: int | None = None, redirect_uri: str | None = None
+) -> str:
+    """သုံးမယ့် redirect URI ကို ရွေးတယ် (localhost ကို ဦးစားပေး)။"""
+    if redirect_uri:
+        return redirect_uri
+    port = port or config.YOUTUBE_OAUTH_PORT
+    local_default = f"http://localhost:{port}/"
+    uris = [str(u) for u in info.get("redirect_uris") or []]
+    if info.get("type") == "installed":
+        return local_default
+    for uri in uris:
+        if "localhost" in uri or "127.0.0.1" in uri:
+            return uri
+    return local_default
+
+
+def build_local_server_flow(
+    client_secret_file: str | Path | None = None,
+    port: int | None = None,
+    redirect_uri: str | None = None,
+):
     """Browser ရှိတဲ့ စက်အတွက် flow (localhost redirect)။"""
     _, _, InstalledAppFlow, _ = _import_oauth()
     client_secret_file = Path(client_secret_file or config.YOUTUBE_CLIENT_SECRETS)
@@ -295,7 +342,9 @@ def build_local_server_flow(client_secret_file: str | Path | None = None, port: 
             "docs/YOUTUBE_AUTH_MM.md ပါ အဆင့်များအတိုင်း ဒေါင်းလုပ်ပါ"
         )
     flow = InstalledAppFlow.from_client_secrets_file(str(client_secret_file), list(SCOPES))
-    flow.redirect_uri = f"http://localhost:{port or config.YOUTUBE_OAUTH_PORT}/"
+    info = client_secret_info(client_secret_file)
+    flow.redirect_uri = pick_redirect_uri(info, port=port, redirect_uri=redirect_uri)
+    logger.info("OAuth client type=%s, redirect=%s", info.get("type"), flow.redirect_uri)
     return flow
 
 
@@ -304,6 +353,7 @@ def authorize_with_pasted_code(
     token_file: str | Path | None = None,
     *,
     port: int | None = None,
+    redirect_uri: str | None = None,
     input_fn=input,
     print_fn=print,
 ):
@@ -312,7 +362,8 @@ def authorize_with_pasted_code(
     token_file = Path(token_file or config.YOUTUBE_TOKEN_FILE)
     port = port or config.YOUTUBE_OAUTH_PORT
 
-    flow = build_local_server_flow(client_secret_file, port)
+    flow = build_local_server_flow(client_secret_file, port, redirect_uri=redirect_uri)
+    target_uri = flow.redirect_uri
     auth_url, _ = flow.authorization_url(
         access_type="offline", include_granted_scopes="true", prompt="consent"
     )
@@ -327,8 +378,9 @@ def authorize_with_pasted_code(
     print_fn("   “Google hasn’t verified this app” ဆိုရင် → Advanced → Go to … (unsafe)")
     print_fn("   → Continue / Allow ကို နှိပ်ပါ")
     print_fn("")
-    print_fn(f"၃) ပြီးရင် http://localhost:{port}/?code=… လိပ်စာနဲ့ page ပြပါမယ်")
-    print_fn("   (page မပေါ်ရင် address bar က URL တစ်ခုလုံးကို copy လုပ်ပါ)")
+    print_fn(f"၃) ပြီးရင် {target_uri}?code=… လိပ်စာနဲ့ page ပြပါမယ်")
+    print_fn("   (page မပေါ်ရင် address bar က URL တစ်ခုလုံးကို copy လုပ်ပါ —")
+    print_fn(f"    “{target_uri}” ကို Google က အသိအမှတ်ပြုထားဖို့ လိုတယ်)")
     print_fn("   အဲဒီ URL (သို့) code ကို ဒီမှာ paste လုပ်ပြီး Enter နှိပ်ပါ:")
     print_fn("─" * 62)
 
@@ -366,6 +418,7 @@ def get_authenticated_service(
     interactive: bool | str = True,
     force_manual: bool = False,
     port: int | None = None,
+    redirect_uri: str | None = None,
 ):
     """OAuth2 နဲ့ YouTube client ကို ပြန်ပေးတယ် (token ကို cache လုပ်ထားတယ်)။
 
@@ -406,14 +459,21 @@ def get_authenticated_service(
             )
 
         if force_manual or interactive == "manual":
-            return authorize_with_pasted_code(client_secret_file, token_file, port=port)
+            return authorize_with_pasted_code(
+                client_secret_file, token_file, port=port, redirect_uri=redirect_uri
+            )
 
         try:
-            flow = InstalledAppFlow.from_client_secrets_file(str(client_secret_file), list(SCOPES))
-            creds = flow.run_local_server(port=port or config.YOUTUBE_OAUTH_PORT, open_browser=True)
+            flow = build_local_server_flow(client_secret_file, port, redirect_uri=redirect_uri)
+            server_port = port or config.YOUTUBE_OAUTH_PORT
+            if flow.redirect_uri.startswith("http://localhost:"):
+                server_port = int(flow.redirect_uri.rsplit(":", 1)[1].split("/")[0])
+            creds = flow.run_local_server(port=server_port, open_browser=True)
         except Exception as exc:
             logger.warning("browser flow မရပါ (%s) — paste-code နည်းကို ပြောင်းမယ်", exc)
-            return authorize_with_pasted_code(client_secret_file, token_file, port=port)
+            return authorize_with_pasted_code(
+                client_secret_file, token_file, port=port, redirect_uri=redirect_uri
+            )
 
         token_file.parent.mkdir(parents=True, exist_ok=True)
         token_file.write_text(creds.to_json(), encoding="utf-8")
@@ -426,8 +486,12 @@ def describe_auth_status() -> dict[str, object]:
     """token ရှိမရှိ + သက်တမ်း — bot/check_setup အတွက်။"""
     _, Credentials, _, _ = _import_oauth()
     token_file = Path(config.YOUTUBE_TOKEN_FILE)
+    client = client_secret_info()
     info: dict[str, object] = {
-        "client_secret": Path(config.YOUTUBE_CLIENT_SECRETS).exists(),
+        "client_secret": bool(client.get("exists")),
+        "client_type": client.get("type"),
+        "redirect_uris": client.get("redirect_uris"),
+        "project_id": client.get("project_id"),
         "token_file": token_file.exists(),
         "expired": None,
         "has_refresh": None,

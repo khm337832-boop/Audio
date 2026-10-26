@@ -113,6 +113,7 @@ python main.py setup
 3. **terminal မှာ တစ်ခါ run** —
 
 ```bash
+python main.py auth --status   # client အမျိုးအစား + token အခြေအနေ
 python main.py auth            # browser ပွင့်တဲ့ စက်အတွက်
 python main.py auth --manual   # browser မပွင့်ရင် (link copy → code paste)
 python main.py auth --status   # token အခြေအနေ

@@ -444,3 +444,57 @@ def test_generate_voice_falls_back_to_next_provider(monkeypatch, tmp_path):
     assert Path(audio).exists()
     assert info[0]["provider"] == "gtts"     # ပြောင်းသုံးတာ မှတ်ထားတယ်
     assert all(chapter.duration == 12.0 for chapter in story.chapters)
+
+
+# ------------------------------------------------------------------ client_secret handling
+def _write_client_secret(path: Path, kind: str, redirect_uris=None) -> Path:
+    block = {
+        "client_id": "abc.apps.googleusercontent.com",
+        "client_secret": "GOCSPX-fake",
+        "project_id": "demo",
+        "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+        "token_uri": "https://oauth2.googleapis.com/token",
+    }
+    if redirect_uris is not None:
+        block["redirect_uris"] = redirect_uris
+    path.write_text(json.dumps({kind: block}), "utf-8")
+    return path
+
+
+def test_client_secret_info_installed(tmp_path):
+    from services import youtube_service
+
+    path = _write_client_secret(tmp_path / "cs.json", "installed", ["http://localhost"])
+    info = youtube_service.client_secret_info(path)
+    assert info["type"] == "installed"
+    assert info["project_id"] == "demo"
+
+
+def test_client_secret_info_web_uses_localhost_if_present(tmp_path):
+    from services import youtube_service
+
+    path = _write_client_secret(
+        tmp_path / "cs.json", "web", ["https://example.com/oauth/cb", "http://localhost:9000/"]
+    )
+    info = youtube_service.client_secret_info(path)
+    assert info["type"] == "web"
+    assert youtube_service.pick_redirect_uri(info) == "http://localhost:9000/"
+
+
+def test_web_client_without_localhost_falls_back_to_default_port(tmp_path, monkeypatch):
+    from services import youtube_service
+
+    monkeypatch.setattr(config, "YOUTUBE_OAUTH_PORT", 8085)
+    path = _write_client_secret(tmp_path / "cs.json", "web", ["https://render.example.com/cb"])
+    info = youtube_service.client_secret_info(path)
+    assert youtube_service.pick_redirect_uri(info) == "http://localhost:8085/"
+
+
+def test_broken_client_secret_reports_error(tmp_path):
+    from services import youtube_service
+
+    path = tmp_path / "cs.json"
+    path.write_text("{not json", "utf-8")
+    info = youtube_service.client_secret_info(path)
+    assert info["exists"] is True and info["type"] is None
+    assert "JSON" in str(info.get("error"))

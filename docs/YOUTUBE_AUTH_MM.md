@@ -66,6 +66,26 @@ Audio/
 
 ---
 
+## ⚠️ ရှိပြီးသား client_secret.json က “Web application” ဖြစ်နေရင်
+
+`client_secret.json` ထဲမှာ `"web"` လို့ ပါရင် (Desktop app မဟုတ်ဘဲ Web app ဖြစ်နေရင်)
+အောက်က တစ်နည်းကို ရွေးပါ —
+
+**နည်း ၁ — (အကြံပြု) Desktop client အသစ် ဖန်တီး** — အဆင့် ၄ အတိုင်း
+`Application type: Desktop app` နဲ့ အသစ်ဖန်တီးပြီး `client_secret.json` ကို အစားထိုးပါ။
+ဒါဆိုရင် ဘာမှ ထပ်ပြင်စရာ မလို။
+
+**နည်း ၂ — ရှိပြီးသား Web client ကို ဆက်​သုံး**
+1. Google Cloud → **Credentials** → သင့် OAuth client ကို နှိပ်
+2. **Authorized redirect URIs** → **+ ADD URI** → `http://localhost:8085/` ထည့် → **Save**
+3. Terminal မှာ `python main.py auth --manual` (သို့ `--redirect-uri http://localhost:8085/`)
+4. `python main.py auth --status` နဲ့ အမျိုးအစား/redirect ကို စစ်နိုင်တယ်
+
+> Web client မှာ redirect URI မထည့်ထားရင် `redirect_uri_mismatch` ဆိုတဲ့ အမှား ရမယ်။
+> ဒီ bot က browser မလိုတဲ့ server ပေါ်မှာ run ရင် Desktop client + `--manual` က အလွယ်ဆုံးပါ။
+
+---
+
 ## အဆင့် ၅ — token ယူ (terminal မှာ တစ်ခါ)
 
 ```bash
@@ -118,7 +138,7 @@ YouTube Studio → **Content** မှာ ဗီဒီယို ပေါ်လ�
 | `The request cannot be completed because you have exceeded your quota` | တစ်ရက် 10,000 units — upload ~1,600 units၊ ~၆ ခု/ရက်။ မနက်ဖန် ပြန်စမ်းပါ |
 | `channel not found` | YouTube channel မရှိသေးလို့ — youtube.com → သင့်ပုံ → **Create a channel** |
 | `client_secret.json မတွေ့ပါ` | ဖိုင်နာမည်/နေရာ မှန်၊ `.json` အတု မဖြစ်ရ (Edit → Save As → All files) |
-| `redirect_uri_mismatch` | OAuth client အမျိုးအစားက **Desktop app** ဖြစ်ရမယ် (Web application မဟုတ်) |
+| `redirect_uri_mismatch` | `client_secret.json` က Web client ဖြစ်နေတယ် — Google Console → Credentials → Authorized redirect URIs မှာ `http://localhost:8085/` ထည့်ပါ (သို့) Desktop client အသစ် ဖန်တီးပါ |
 | အသံထွက် (အဆင့် ③) မရ | `pip install edge-tts` (အခမဲ့၊ key မလို) သို့ ElevenLabs key |
 
 ## လုံခြုံရေး

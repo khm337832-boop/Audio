@@ -141,7 +141,19 @@ def main() -> int:
 
     print("\n=== ⑥ YouTube ===")
     if Path(config.YOUTUBE_CLIENT_SECRETS).is_file():
-        add(OK, "client_secret.json", str(config.YOUTUBE_CLIENT_SECRETS))
+        from services import youtube_service as ys
+
+        info = ys.client_secret_info()
+        kind = info.get("type")
+        if kind == "installed":
+            add(OK, "client_secret.json", f"Desktop client ({info.get('project_id')})")
+        elif kind == "web":
+            target = ys.pick_redirect_uri(info)
+            add(WARN, "client_secret.json", f"Web client — redirect ထည့်ဖို့ လိုတယ်: {target}",
+                "Google Console → Authorized redirect URIs မှာ "
+                f"{target} ထည့်ပါ (သို့) Desktop app client အသစ် ဖန်တီးပါ")
+        else:
+            add(WARN, "client_secret.json", str(info.get("error") or "အမျိုးအစား မသိ"))
         if Path(config.YOUTUBE_TOKEN_FILE).is_file():
             add(OK, "youtube-oauth2.json", "OAuth token cache ရှိပြီး — bot တိုက်ရိုက် တင်နိုင်တယ်")
         else:

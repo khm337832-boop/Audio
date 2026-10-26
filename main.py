@@ -65,6 +65,8 @@ def _build_parser() -> argparse.ArgumentParser:
                       help="browser မဖွင့်နိုင်ရင် — link ကို copy လုပ်ပြီး code paste လုပ်တဲ့ နည်း")
     auth.add_argument("--port", type=int, help=f"localhost port (default {config.YOUTUBE_OAUTH_PORT})")
     auth.add_argument("--client-secret", help="client_secret.json ဖိုင်လမ်းကြောင်း")
+    auth.add_argument("--redirect-uri",
+                      help="redirect URI (Web client ဖြစ်ရင် — ဥပမာ http://localhost:8085/)")
     auth.add_argument("--status", action="store_true", help="လက်ရှိ token အခြေအနေ ကြည့်")
 
     sub.add_parser("setup", help="BOT_TOKEN / GEMINI_API_KEY ကို စစ်ပြီး .env ထဲ သိမ်းမယ်")
@@ -199,13 +201,27 @@ def cmd_auth(args: argparse.Namespace) -> int:
     """`python main.py auth` — Google ခွင့်ပြုချက် ယူပြီး token သိမ်းတယ်။"""
     from services import youtube_service
 
+    from services import youtube_service as ys
+
+    secret_path = Path(args.client_secret) if args.client_secret else Path(config.YOUTUBE_CLIENT_SECRETS)
+    client = ys.client_secret_info(secret_path)
+
     if args.status:
+        print(f"client_secret.json: {'✅ ရှိ' if client['exists'] else '❌ မရှိ'}  ({secret_path})")
+        if client["exists"]:
+            print(f"  အမျိုးအစား: {client.get('type')}  project: {client.get('project_id')}")
+            if client.get("redirect_uris"):
+                print(f"  redirect URIs: {', '.join(client['redirect_uris'])}")
+            if client.get("error"):
+                print(f"  ⚠️ {client['error']}")
+            if client.get("type") == "web":
+                chosen = ys.pick_redirect_uri(client, port=args.port)
+                print(f"  ⚠️ Web client — ဒီ redirect ကို Google Console မှာ ထည့်ထားဖို့ လိုတယ်: {chosen}")
         try:
-            info = youtube_service.describe_auth_status()
+            info = ys.describe_auth_status()
         except Exception as exc:  # noqa: BLE001
             logger.error("စစ်မရပါ: %s", exc)
             return 1
-        print(f"client_secret.json: {'✅ ရှိ' if info['client_secret'] else '❌ မရှိ'}")
         print(f"youtube-oauth2.json: {'✅ ရှိ' if info['token_file'] else '❌ မရှိ'}")
         if info["token_file"]:
             print(f"  သက်တမ်းကုန်: {info['expired']} | refresh token: {info['has_refresh']}")
@@ -216,18 +232,29 @@ def cmd_auth(args: argparse.Namespace) -> int:
     client_secret = Path(args.client_secret) if args.client_secret else None
     if client_secret:
         config.YOUTUBE_CLIENT_SECRETS = client_secret
-    if not Path(config.YOUTUBE_CLIENT_SECRETS).exists():
-        print(f"❌ client_secret.json မတွေ့ပါ: {config.YOUTUBE_CLIENT_SECRETS}")
+    if not secret_path.exists():
+        print(f"❌ client_secret.json မတွေ့ပါ: {secret_path}")
         _print_auth_help()
         return 1
+
+    if client.get("type") == "web":
+        target = ys.pick_redirect_uri(client, port=args.port, redirect_uri=args.redirect_uri)
+        print("⚠️ ဒီ client_secret.json က “Web application” အမျိုးအစား ဖြစ်တယ်")
+        print(f"   (Desktop app က ပိုလွယ်တယ်)။ သုံးမယ့် redirect: {target}")
+        print("   Google Cloud → Credentials → သင့် OAuth client → Authorized redirect URIs")
+        print(f"   မှာ {target} ကို ထည့်ထားဖို့ လိုတယ် (မထည့်ရင် redirect_uri_mismatch ဖြစ်မယ်)")
+        print("")
+    elif client.get("error"):
+        print(f"⚠️ {client['error']}")
 
     print("🔐 Google ခွင့်ပြုချက် ယူနေတယ်…")
     try:
         youtube = youtube_service.get_authenticated_service(
-            client_secret_file=client_secret,
+            client_secret_file=secret_path,
             interactive="manual" if args.manual else True,
             force_manual=args.manual,
             port=args.port,
+            redirect_uri=args.redirect_uri,
         )
         response = youtube.channels().list(part="snippet,statistics", mine=True).execute()
         items = response.get("items", [])
