@@ -52,6 +52,18 @@ assets/fonts/                # Padauk (မြန်မာ) — OFL
 tests/test_workflow.py       # 18 tests (network မလိုပဲ အလုပ်လုပ်တယ်)
 ```
 
+## အဆင်သင့်ဖြစ်မှု စစ်ဆေးခြင်း
+
+Bot ကို မစခင်မှာ တစ်ချက်တည်း စစ်နိုင်တယ်:
+
+```bash
+python check_setup.py
+```
+
+✅ အဆင်သင့် / ⚠️ မရှိလည်း အလုပ်လုပ် (fallback) / ❌ ဒါမပါရင် အဆင့်တစ်ခု ရပ်မယ် ဆိုပြီး
+package၊ ffmpeg၊ TTS၊ `.env`/`BOT_TOKEN`၊ Gemini key၊ YouTube OAuth၊ မြန်မာ font နဲ့
+thumbnail render ကို တစ်ကြောင်းစီ ပြတယ်။ မရှိတာရှိရင် ဖြေရှင်းနည်းကိုပါ ပြပေးတယ်။
+
 ## အမြန် စတင်ခြင်း
 
 ```bash
