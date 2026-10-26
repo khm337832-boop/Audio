@@ -1,0 +1,14 @@
+.env
+temp/
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.wav
+*.mp3
+*.ogg
+*.mp4
+*.jpg
+*.png
+client_secret.json
+youtube-oauth2.json
