@@ -1,10 +1,10 @@
-"""Command line — ဗီဒီယိုပြီးသားကနေ YouTube တင်တဲ့အထိ။
+"""Command line —
 
-ဥပမာ:
-    python main.py publish --job-dir temp/job_20260101_120000
-    python main.py publish --job-dir temp/job_x --video final.mp4 --dry-run
-    python main.py title --job-dir temp/job_x
-    python main.py metadata --job-dir temp/job_x
+    python main.py produce  --topic "ရှေးခေတ် ရွာ"          # အဆင့် ၁-၇ အားလုံး + YouTube တင်
+    python main.py produce  --dry-run                       # YouTube API မခေါ်ဘဲ စမ်းသပ်
+    python main.py publish  --job-dir temp/job_x            # ဗီဒီယိုပြီးသားကနေ တင်
+    python main.py title    --job-dir temp/job_x            # ခေါင်းစဉ်များ ကြည့်
+    python main.py metadata --job-dir temp/job_x            # အနှစ်ချုပ် ကြည့်
 """
 
 from __future__ import annotations
@@ -15,6 +15,9 @@ import logging
 import sys
 from pathlib import Path
 
+import config
+
+from pipeline import PipelineOptions, StoryPipeline
 from services import metadata_service
 from workflow import PublishOptions, PublishWorkflow, StageError
 
@@ -40,9 +43,36 @@ def _build_parser() -> argparse.ArgumentParser:
     publish.add_argument("--no-thumbnail", action="store_true", help="thumbnail မလုပ်ပါ")
     publish.add_argument("--title-count", type=int, default=3)
 
+    produce = sub.add_parser("produce", help="ဇာတ်လမ်းရေးကနေ YouTube တင်တဲ့အထိ (အဆင့် ၁-၇)")
+    produce.add_argument("--topic", help="ဇာတ်လမ်း အကြောင်းအရာ")
+    produce.add_argument("--job-dir", help="ထွက်ရလဒ် သိမ်းမယ့် folder (default: temp/job_<time>)")
+    produce.add_argument("--chars", type=int, help="ပစ်မှတ် စာလုံးရေ (default: .env က ၂၀,၀၀၀–၂၅,၀၀၀)")
+    produce.add_argument("--min-chars", type=int)
+    produce.add_argument("--max-chars", type=int)
+    produce.add_argument("--scenes", type=int, help="အခန်းတစ်ခန်း ဇာတ်ကွက် ပုံ အရေအတွက်")
+    produce.add_argument("--tts", choices=["auto", "local", "elevenlabs"], default=None)
+    produce.add_argument("--privacy", choices=["private", "unlisted", "public"])
+    produce.add_argument("--publish-at", help="ISO 8601 schedule")
+    produce.add_argument("--dry-run", action="store_true", help="YouTube API မခေါ်ဘဲ စမ်းသပ်")
+    produce.add_argument("--no-upload", action="store_true", help="ဗီဒီယို ထုတ်ပြီး မတင်ပါ")
+
     title = sub.add_parser("title", help="ခေါင်းစဉ် ကိုယ်စားလှယ်များ ပြမယ်")
     title.add_argument("--job-dir", required=True)
     title.add_argument("--count", type=int, default=3)
+
+    auth = sub.add_parser("auth", help="YouTube OAuth တစ်ခါ ခွင့်ပြုချက်ယူပြီး token သိမ်းမယ်")
+    auth.add_argument("--manual", action="store_true",
+                      help="browser မဖွင့်နိုင်ရင် — link ကို copy လုပ်ပြီး code paste လုပ်တဲ့ နည်း")
+    auth.add_argument("--port", type=int, help=f"localhost port (default {config.YOUTUBE_OAUTH_PORT})")
+    auth.add_argument("--client-secret", help="client_secret.json ဖိုင်လမ်းကြောင်း")
+    auth.add_argument("--redirect-uri",
+                      help="redirect URI (Web client ဖြစ်ရင် — ဥပမာ http://localhost:8085/)")
+    auth.add_argument("--status", action="store_true", help="လက်ရှိ token အခြေအနေ ကြည့်")
+    auth.add_argument("--export-env", action="store_true",
+                      help="cloud (Render/VPS) အတွက် YOUTUBE_TOKEN_JSON=… လိုင်း ထုတ်ပေးမယ်")
+
+    sub.add_parser("setup", help="BOT_TOKEN / GEMINI_API_KEY ကို စစ်ပြီး .env ထဲ သိမ်းမယ်")
+    sub.add_parser("doctor", help="အဆင်သင့်ဖြစ်မှု အကျဉ်းချုပ် (secrets မပါ — ကူးပို့နိုင်တယ်)")
 
     meta = sub.add_parser("metadata", help="ဇာတ်လမ်းအနှစ်ချုပ်နဲ့ အခန်းအချက်အလက် ပြမယ်")
     meta.add_argument("--job-dir", required=True)
@@ -85,6 +115,50 @@ def cmd_publish(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_produce(args: argparse.Namespace) -> int:
+    def progress(message: str) -> None:
+        print(f"  {message}", flush=True)
+
+    options = PipelineOptions(
+        topic=args.topic,
+        target_chars=args.chars,
+        min_chars=args.min_chars,
+        max_chars=args.max_chars,
+        scenes_per_chapter=args.scenes,
+        tts_provider=args.tts,
+        privacy_status=args.privacy,
+        publish_at=args.publish_at,
+        dry_run=True if args.dry_run else None,
+        upload=not args.no_upload,
+    )
+    pipeline = StoryPipeline(args.job_dir, options=options, progress=progress)
+    try:
+        result = pipeline.run()
+    except Exception as exc:  # noqa: BLE001
+        logger.error("မအောင်မြင်ပါ: %s", exc)
+        if pipeline.result:
+            print("\n".join(pipeline.result.stage_report()))
+        return 1
+
+    print("\n" + "\n".join(result.stage_report()))
+    print(f"\n📖 {result.story.title} — {result.story_chars:,} စာလုံး, "
+          f"{len(result.story.chapters)} အခန်း, {result.duration_seconds / 60:.1f} မိနစ်")
+    if result.warnings:
+        for warning in result.warnings:
+            print(f"⚠️ {warning}")
+    print(f"🎬 video: {result.video_path}")
+    if result.publish:
+        if result.publish.thumbnail:
+            print(f"🖼️ thumbnail: {result.publish.thumbnail}")
+        upload = result.publish.upload
+        if upload and upload.dry_run:
+            print(f"🧪 DRY-RUN — video id: {upload.video_id}")
+        elif upload:
+            print(f"🎉 {upload.url} ({upload.privacy_status})")
+    print(f"📁 report: {result.job_dir / 'pipeline_result.json'}")
+    return 0
+
+
 def cmd_title(args: argparse.Namespace) -> int:
     from services import youtube_service
 
@@ -100,6 +174,130 @@ def cmd_title(args: argparse.Namespace) -> int:
     return 0
 
 
+def _print_auth_help() -> None:
+    print(
+        """
+📋 YouTube OAuth အတွက် ကြိုတင်ပြင်ဆင်ရန် (တစ်ခါသာ)
+────────────────────────────────────────────
+၁။ https://console.cloud.google.com → project အသစ် ဖန်တီး
+၂။ APIs & Services → Library → “YouTube Data API v3” → Enable
+၃။ OAuth consent screen → External → app name/email ဖြည့်
+    → Test users မှာ သင့် Gmail ကို ထည့် (မဖြစ်မနေ)
+၄။ Credentials → Create credentials → OAuth client ID
+    → Application type: “Desktop app” → Create → Download JSON
+၅။ ဒေါင်းလုပ်ထားတဲ့ ဖိုင်ကို client_secret.json နာမည်ပြောင်းပြီး
+    ဒီ folder (repo root) ထဲ ထည့်ပါ
+၆။ ပြီးရင် — python main.py auth
+────────────────────────────────────────────
+အဆင့်လိုက် ရုပ်ပုံလို လမ်းညွှန်: docs/YOUTUBE_AUTH_MM.md
+""".strip()
+    )
+
+
+def cmd_setup(args: argparse.Namespace) -> int:
+    from setup_wizard import run_wizard
+
+    return run_wizard()
+
+
+def cmd_doctor(args: argparse.Namespace) -> int:
+    from check_setup import compact_report
+
+    print(compact_report())
+    return 0
+
+
+def cmd_auth(args: argparse.Namespace) -> int:
+    """`python main.py auth` — Google ခွင့်ပြုချက် ယူပြီး token သိမ်းတယ်။"""
+    from services import youtube_service
+
+    from services import youtube_service as ys
+
+    secret_path = Path(args.client_secret) if args.client_secret else Path(config.YOUTUBE_CLIENT_SECRETS)
+    client = ys.client_secret_info(secret_path)
+
+    if args.export_env:
+        try:
+            print("\n👇 ဒီလိုင်းကို hosting (Render/Railway/VPS) ရဲ့ Environment Variables မှာ ထည့်ပါ:")
+            print(ys.export_token_env())
+            print("\n(ဒီတန်ဖိုးက သင့် channel ကို တင်ခွင့်ပေးထားတဲ့ token — လျှို့ဝှက်ပါ)")
+        except Exception as exc:  # noqa: BLE001
+            logger.error("ထုတ်မရပါ: %s", exc)
+            return 1
+        return 0
+
+    if args.status:
+        print(f"client_secret.json: {'✅ ရှိ' if client['exists'] else '❌ မရှိ'}  ({secret_path})")
+        if client["exists"]:
+            print(f"  အမျိုးအစား: {client.get('type')}  project: {client.get('project_id')}")
+            if client.get("redirect_uris"):
+                print(f"  redirect URIs: {', '.join(client['redirect_uris'])}")
+            if client.get("error"):
+                print(f"  ⚠️ {client['error']}")
+            if client.get("type") == "web":
+                chosen = ys.pick_redirect_uri(client, port=args.port)
+                print(f"  ⚠️ Web client — ဒီ redirect ကို Google Console မှာ ထည့်ထားဖို့ လိုတယ်: {chosen}")
+        try:
+            info = ys.describe_auth_status()
+        except Exception as exc:  # noqa: BLE001
+            logger.error("စစ်မရပါ: %s", exc)
+            return 1
+        source = info.get("token_source")
+        print(f"youtube-oauth2.json: {'✅ ရှိ' if info['token_file'] else '❌ မရှိ'}")
+        print(f"YOUTUBE_TOKEN_JSON (env): {'✅ ရှိ' if info.get('token_env') else '— မရှိ'}")
+        if source:
+            print(f"  အသုံးပြုမယ့် token: {source} | သက်တမ်းကုန်: {info['expired']} | "
+                  f"refresh token: {info['has_refresh']}")
+        if not info["token_file"]:
+            _print_auth_help()
+        return 0
+
+    client_secret = Path(args.client_secret) if args.client_secret else None
+    if client_secret:
+        config.YOUTUBE_CLIENT_SECRETS = client_secret
+    if not secret_path.exists():
+        print(f"❌ client_secret.json မတွေ့ပါ: {secret_path}")
+        _print_auth_help()
+        return 1
+
+    if client.get("type") == "web":
+        target = ys.pick_redirect_uri(client, port=args.port, redirect_uri=args.redirect_uri)
+        print("⚠️ ဒီ client_secret.json က “Web application” အမျိုးအစား ဖြစ်တယ်")
+        print(f"   (Desktop app က ပိုလွယ်တယ်)။ သုံးမယ့် redirect: {target}")
+        print("   Google Cloud → Credentials → သင့် OAuth client → Authorized redirect URIs")
+        print(f"   မှာ {target} ကို ထည့်ထားဖို့ လိုတယ် (မထည့်ရင် redirect_uri_mismatch ဖြစ်မယ်)")
+        print("")
+    elif client.get("error"):
+        print(f"⚠️ {client['error']}")
+
+    print("🔐 Google ခွင့်ပြုချက် ယူနေတယ်…")
+    try:
+        youtube = youtube_service.get_authenticated_service(
+            client_secret_file=secret_path,
+            interactive="manual" if args.manual else True,
+            force_manual=args.manual,
+            port=args.port,
+            redirect_uri=args.redirect_uri,
+        )
+        response = youtube.channels().list(part="snippet,statistics", mine=True).execute()
+        items = response.get("items", [])
+        if items:
+            channel = items[0]["snippet"]["title"]
+            subs = items[0].get("statistics", {}).get("subscriberCount", "?")
+            print(f"✅ ချိတ်ဆက်ပြီး — channel: {channel} (subscribers: {subs})")
+        else:
+            print("⚠️ token သိမ်းပြီး ဒါပေမယ့် channel မတွေ့ပါ —")
+            print("   YouTube channel တစ်ခု ဖန်တီးထားဖို့ လိုတယ် (youtube.com → Create channel)")
+        print(f"🔑 token: {config.YOUTUBE_TOKEN_FILE}")
+        print("\n👉 စမ်းသပ်ရန်: python main.py publish --job-dir temp/real_test --privacy private")
+        print("☁️ cloud မှာ run မယ်ဆိုရင်: python main.py auth --export-env")
+        print("   (quota: တစ်ရက် 10,000 units — upload တစ်ခု ~1,600 units ≈ ၆ ခု/ရက်)")
+        return 0
+    except Exception as exc:  # noqa: BLE001
+        logger.error("OAuth မအောင်မြင်ပါ: %s", exc)
+        return 1
+
+
 def cmd_metadata(args: argparse.Namespace) -> int:
     metadata = metadata_service.load_or_extract_metadata(args.job_dir, persist=True)
     print(json.dumps(metadata.to_dict(), ensure_ascii=False, indent=2))
@@ -108,8 +306,18 @@ def cmd_metadata(args: argparse.Namespace) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
-    Path(args.job_dir).mkdir(parents=True, exist_ok=True)
-    handlers = {"publish": cmd_publish, "title": cmd_title, "metadata": cmd_metadata}
+    job_dir = getattr(args, "job_dir", None)
+    if job_dir:
+        Path(job_dir).mkdir(parents=True, exist_ok=True)
+    handlers = {
+        "produce": cmd_produce,
+        "setup": cmd_setup,
+        "doctor": cmd_doctor,
+        "auth": cmd_auth,
+        "publish": cmd_publish,
+        "title": cmd_title,
+        "metadata": cmd_metadata,
+    }
     return handlers[args.command](args)
 
 

@@ -271,21 +271,197 @@ def _validate_payload(title: str, description: str, thumbnail_path: Path | None)
             raise YouTubeError("thumbnail ဖိုင် 2MB ကျော်နေတယ်")
 
 
-def get_authenticated_service(
-    client_secret_file: str | Path | None = None,
-    token_file: str | Path | None = None,
-    *,
-    interactive: bool = True,
-):
-    """OAuth2 နဲ့ YouTube client ကို ပြန်ပေးတယ် (token ကို cache လုပ်ထားတယ်)။"""
+def _import_oauth():
     try:
         from google.auth.transport.requests import Request
         from google.oauth2.credentials import Credentials
         from google_auth_oauthlib.flow import InstalledAppFlow
         from googleapiclient.discovery import build
     except Exception as exc:  # pragma: no cover - optional dependency
-        raise YouTubeAuthError(f"google-api-python-client မရှိပါ: {exc}") from exc
+        raise YouTubeAuthError(
+            "google-api-python-client / google-auth-oauthlib မရှိပါ: "
+            "`pip install google-api-python-client google-auth-oauthlib google-auth-httplib2`"
+        ) from exc
+    return Request, Credentials, InstalledAppFlow, build
 
+
+def decode_token_payload(raw: str) -> dict[str, Any]:
+    """`YOUTUBE_TOKEN_JSON` တန်ဖိုးကို dict အဖြစ် ပြောင်း (raw JSON / base64 နှစ်မျိုးလုံး ရ)။"""
+    raw = (raw or "").strip()
+    if not raw:
+        raise YouTubeAuthError("token env ဗလာဖြစ်နေတယ်")
+    if raw.startswith("{"):
+        return json.loads(raw)
+    import base64
+
+    decoded = base64.b64decode(raw + "=" * (-len(raw) % 4)).decode("utf-8")
+    return json.loads(decoded)
+
+
+def _env_token_info() -> dict[str, Any] | None:
+    if not config.YOUTUBE_TOKEN_JSON:
+        return None
+    try:
+        return decode_token_payload(config.YOUTUBE_TOKEN_JSON)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("YOUTUBE_TOKEN_JSON ဖတ်မရပါ: %s", exc)
+        return None
+
+
+def export_token_env(token_file: str | Path | None = None) -> str:
+    """token ဖိုင်ကို `YOUTUBE_TOKEN_JSON=<base64>` လိုင်းအဖြစ် ထုတ်ပေးတယ် (cloud deploy အတွက်)။"""
+    import base64
+
+    path = Path(token_file or config.YOUTUBE_TOKEN_FILE)
+    if not path.exists():
+        raise YouTubeAuthError(f"token ဖိုင် မတွေ့ပါ: {path} — `python main.py auth` ကို အရင် run ပါ")
+    raw = path.read_bytes()
+    json.loads(raw)  # မှန်/မမှန် စစ်
+    return "YOUTUBE_TOKEN_JSON=" + base64.b64encode(raw).decode()
+
+
+def client_secret_info(client_secret_file: str | Path | None = None) -> dict[str, Any]:
+    """`client_secret.json` ရဲ့ အမျိုးအစား (installed/web) နဲ့ redirect URIs ကို ဖတ်တယ်။"""
+    path = Path(client_secret_file or config.YOUTUBE_CLIENT_SECRETS)
+    info: dict[str, Any] = {
+        "path": str(path), "exists": path.exists(), "type": None,
+        "redirect_uris": [], "project_id": None,
+    }
+    if not path.exists():
+        return info
+    try:
+        data = json.loads(path.read_text("utf-8"))
+    except Exception as exc:  # noqa: BLE001
+        info["error"] = f"JSON ဖတ်မရပါ: {exc}"
+        return info
+    for kind in ("installed", "web"):
+        if kind in data:
+            block = data[kind] or {}
+            info["type"] = kind
+            info["redirect_uris"] = list(block.get("redirect_uris") or [])
+            info["project_id"] = block.get("project_id")
+            break
+    else:
+        info["error"] = "installed/web key မတွေ့ပါ — OAuth client JSON မှန်/မမှန် စစ်ပါ"
+    return info
+
+
+def pick_redirect_uri(
+    info: dict[str, Any], port: int | None = None, redirect_uri: str | None = None
+) -> str:
+    """သုံးမယ့် redirect URI ကို ရွေးတယ် (localhost ကို ဦးစားပေး)။"""
+    if redirect_uri:
+        return redirect_uri
+    port = port or config.YOUTUBE_OAUTH_PORT
+    local_default = f"http://localhost:{port}/"
+    uris = [str(u) for u in info.get("redirect_uris") or []]
+    if info.get("type") == "installed":
+        return local_default
+    for uri in uris:
+        if "localhost" in uri or "127.0.0.1" in uri:
+            return uri
+    return local_default
+
+
+def build_local_server_flow(
+    client_secret_file: str | Path | None = None,
+    port: int | None = None,
+    redirect_uri: str | None = None,
+):
+    """Browser ရှိတဲ့ စက်အတွက် flow (localhost redirect)။"""
+    _, _, InstalledAppFlow, _ = _import_oauth()
+    client_secret_file = Path(client_secret_file or config.YOUTUBE_CLIENT_SECRETS)
+    if not client_secret_file.exists():
+        raise YouTubeAuthError(
+            f"OAuth client secret မတွေ့ပါ: {client_secret_file}\n"
+            "docs/YOUTUBE_AUTH_MM.md ပါ အဆင့်များအတိုင်း ဒေါင်းလုပ်ပါ"
+        )
+    flow = InstalledAppFlow.from_client_secrets_file(str(client_secret_file), list(SCOPES))
+    info = client_secret_info(client_secret_file)
+    flow.redirect_uri = pick_redirect_uri(info, port=port, redirect_uri=redirect_uri)
+    logger.info("OAuth client type=%s, redirect=%s", info.get("type"), flow.redirect_uri)
+    return flow
+
+
+def authorize_with_pasted_code(
+    client_secret_file: str | Path | None = None,
+    token_file: str | Path | None = None,
+    *,
+    port: int | None = None,
+    redirect_uri: str | None = None,
+    input_fn=input,
+    print_fn=print,
+):
+    """Browser မဖွင့်နိုင်တဲ့ စက်အတွက် — URL ကို ကိုယ်တိုင်ဖွင့်ပြီး code ကို paste လုပ်တဲ့ နည်း။"""
+    Request, Credentials, _, build = _import_oauth()
+    token_file = Path(token_file or config.YOUTUBE_TOKEN_FILE)
+    port = port or config.YOUTUBE_OAUTH_PORT
+
+    flow = build_local_server_flow(client_secret_file, port, redirect_uri=redirect_uri)
+    target_uri = flow.redirect_uri
+    auth_url, _ = flow.authorization_url(
+        access_type="offline", include_granted_scopes="true", prompt="consent"
+    )
+
+    print_fn("")
+    print_fn("─" * 62)
+    print_fn("၁) အောက်က link ကို browser မှာ ဖွင့်ပါ (ဖုန်း/ကွန်ပျူတာ ရပါတယ်):")
+    print_fn("")
+    print_fn(auth_url)
+    print_fn("")
+    print_fn("၂) YouTube တင်မယ့် Google account ကို ရွေးပါ")
+    print_fn("   “Google hasn’t verified this app” ဆိုရင် → Advanced → Go to … (unsafe)")
+    print_fn("   → Continue / Allow ကို နှိပ်ပါ")
+    print_fn("")
+    print_fn(f"၃) ပြီးရင် {target_uri}?code=… လိပ်စာနဲ့ page ပြပါမယ်")
+    print_fn("   (page မပေါ်ရင် address bar က URL တစ်ခုလုံးကို copy လုပ်ပါ —")
+    print_fn(f"    “{target_uri}” ကို Google က အသိအမှတ်ပြုထားဖို့ လိုတယ်)")
+    print_fn("   အဲဒီ URL (သို့) code ကို ဒီမှာ paste လုပ်ပြီး Enter နှိပ်ပါ:")
+    print_fn("─" * 62)
+
+    try:
+        answer = str(input_fn("> ")).strip()
+    except EOFError as exc:
+        raise YouTubeAuthError(
+            "code မထည့်လို့ OAuth မပြီးပါ — `python main.py auth --manual` ကို "
+            "terminal မှာ တိုက်ရိုက် run ပြီး URL ကို paste လုပ်ပါ"
+        ) from exc
+    if not answer:
+        raise YouTubeAuthError("code မထည့်လို့ OAuth မပြီးပါ")
+
+    try:
+        if answer.startswith("http"):
+            flow.fetch_token(authorization_response=answer)
+        else:
+            flow.fetch_token(code=answer)
+        creds = flow.credentials
+    except Exception as exc:
+        raise YouTubeAuthError(
+            f"token ယူမရပါ: {exc}\n(URL ကို အကုန်လုံး copy လုပ်ပါ — ?code=… အပိုင်း ပါရမယ်)"
+        ) from exc
+
+    token_file.parent.mkdir(parents=True, exist_ok=True)
+    token_file.write_text(creds.to_json(), encoding="utf-8")
+    print_fn(f"✅ token သိမ်းပြီး: {token_file}")
+    return build("youtube", "v3", credentials=creds, cache_discovery=False)
+
+
+def get_authenticated_service(
+    client_secret_file: str | Path | None = None,
+    token_file: str | Path | None = None,
+    *,
+    interactive: bool | str = True,
+    force_manual: bool = False,
+    port: int | None = None,
+    redirect_uri: str | None = None,
+):
+    """OAuth2 နဲ့ YouTube client ကို ပြန်ပေးတယ် (token ကို cache လုပ်ထားတယ်)။
+
+    interactive=False → bot အတွက် (browser မဖွင့်ဘူး၊ token cache ပဲ သုံးတယ်)
+    interactive=True  → localhost browser flow (ပျက်ရင် paste-code flow ကို ပြောင်း)
+    force_manual=True → paste-code flow ကို တိုက်ရိုက် သုံး
+    """
+    Request, Credentials, InstalledAppFlow, build = _import_oauth()
     client_secret_file = Path(client_secret_file or config.YOUTUBE_CLIENT_SECRETS)
     token_file = Path(token_file or config.YOUTUBE_TOKEN_FILE)
 
@@ -297,28 +473,96 @@ def get_authenticated_service(
             logger.warning("token ဖတ်မရပါ: %s", exc)
             creds = None
 
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        else:
-            if not client_secret_file.exists():
-                raise YouTubeAuthError(
-                    f"OAuth client secret မတွေ့ပါ: {client_secret_file} — "
-                    "Google Cloud Console ကနေ ဒေါင်းလုပ်ပြီး client_secret.json အနေနဲ့ ထည့်ပါ"
-                )
-            flow = InstalledAppFlow.from_client_secrets_file(str(client_secret_file), list(SCOPES))
-            if not interactive:
-                raise YouTubeAuthError("interactive OAuth မဖြစ်နိုင်ပါ — token_file လိုတယ်")
+    if creds is None:
+        env_payload = _env_token_info()
+        if env_payload:
             try:
-                creds = flow.run_local_server(port=0, open_browser=False)
-            except Exception:
-                creds = flow.run_console()
+                creds = Credentials.from_authorized_user_info(env_payload, list(SCOPES))
+                logger.info("token ကို YOUTUBE_TOKEN_JSON (env) ကနေ ယူတယ်")
+            except Exception as exc:
+                logger.warning("env token မရပါ: %s", exc)
+                creds = None
+
+    if creds and creds.expired and creds.refresh_token:
+        try:
+            creds.refresh(Request())
+        except Exception as exc:
+            logger.warning("token refresh မရပါ: %s", exc)
+            creds = None
+
+    if not creds or not creds.valid:
+        if not interactive:
+            raise YouTubeAuthError(
+                "YouTube OAuth token မရှိသေးပါ — terminal မှာ `python main.py auth` ကို "
+                "တစ်ခါ run ပြီး ခွင့်ပြုချက် ပေးပါ (token ကို "
+                f"{config.YOUTUBE_TOKEN_FILE} မှာ သိမ်းပါမယ်)။ "
+                "Cloud မှာ run ရင် `python main.py auth --export-env` ကို သုံးပါ"
+            )
+        if not client_secret_file.exists():
+            raise YouTubeAuthError(
+                f"OAuth client secret မတွေ့ပါ: {client_secret_file} — "
+                "docs/YOUTUBE_AUTH_MM.md ပါ အဆင့်များအတိုင်း ဒေါင်းလုပ်ပါ"
+            )
+
+        if force_manual or interactive == "manual":
+            return authorize_with_pasted_code(
+                client_secret_file, token_file, port=port, redirect_uri=redirect_uri
+            )
+
+        try:
+            flow = build_local_server_flow(client_secret_file, port, redirect_uri=redirect_uri)
+            server_port = port or config.YOUTUBE_OAUTH_PORT
+            if flow.redirect_uri.startswith("http://localhost:"):
+                server_port = int(flow.redirect_uri.rsplit(":", 1)[1].split("/")[0])
+            creds = flow.run_local_server(port=server_port, open_browser=True)
+        except Exception as exc:
+            logger.warning("browser flow မရပါ (%s) — paste-code နည်းကို ပြောင်းမယ်", exc)
+            return authorize_with_pasted_code(
+                client_secret_file, token_file, port=port, redirect_uri=redirect_uri
+            )
 
         token_file.parent.mkdir(parents=True, exist_ok=True)
         token_file.write_text(creds.to_json(), encoding="utf-8")
         logger.info("OAuth token သိမ်းပြီး: %s", token_file)
 
     return build("youtube", "v3", credentials=creds, cache_discovery=False)
+
+
+def describe_auth_status() -> dict[str, object]:
+    """token ရှိမရှိ + သက်တမ်း — bot/check_setup အတွက်။"""
+    _, Credentials, _, _ = _import_oauth()
+    token_file = Path(config.YOUTUBE_TOKEN_FILE)
+    client = client_secret_info()
+    info: dict[str, object] = {
+        "client_secret": bool(client.get("exists")),
+        "client_type": client.get("type"),
+        "redirect_uris": client.get("redirect_uris"),
+        "project_id": client.get("project_id"),
+        "token_file": token_file.exists(),
+        "expired": None,
+        "has_refresh": None,
+    }
+    info["token_env"] = bool(config.YOUTUBE_TOKEN_JSON)
+    creds = None
+    if token_file.exists():
+        try:
+            creds = Credentials.from_authorized_user_file(str(token_file), list(SCOPES))
+        except Exception:
+            info["token_file"] = False
+    if creds is None:
+        env_payload = _env_token_info()
+        if env_payload:
+            try:
+                creds = Credentials.from_authorized_user_info(env_payload, list(SCOPES))
+                info["token_source"] = "env"
+            except Exception:
+                creds = None
+    else:
+        info["token_source"] = "file"
+    if creds is not None:
+        info["expired"] = bool(creds.expired)
+        info["has_refresh"] = bool(creds.refresh_token)
+    return info
 
 
 def upload_thumbnail(youtube, video_id: str, thumbnail_path: str | Path) -> bool:
@@ -386,10 +630,18 @@ def upload_video(
             raw={"note": "dry-run — YouTube API မခေါ်ပါ"},
         )
 
-    from googleapiclient.http import MediaFileUpload
-    from googleapiclient.errors import HttpError
+    try:
+        from googleapiclient.errors import HttpError
+        from googleapiclient.http import MediaFileUpload
+    except Exception as exc:
+        raise YouTubeError(
+            "YouTube SDK မရှိပါ — `pip install google-api-python-client "
+            "google-auth-oauthlib google-auth-httplib2`"
+        ) from exc
 
-    youtube = client or get_authenticated_service()
+    youtube = client or get_authenticated_service(
+        interactive=True if config.YOUTUBE_INTERACTIVE else False
+    )
 
     body: dict[str, Any] = {
         "snippet": {

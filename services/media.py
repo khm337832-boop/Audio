@@ -14,14 +14,38 @@ class MediaError(RuntimeError):
     pass
 
 
+_FFMPEG_CACHE: str | None = None
+
+
+def ffmpeg_binary() -> str | None:
+    """ffmpeg ကို ရှာတယ် — PATH မှာ မရှိရင် imageio-ffmpeg ရဲ့ static binary ကို သုံးတယ်။"""
+    global _FFMPEG_CACHE
+    if _FFMPEG_CACHE:
+        return _FFMPEG_CACHE
+    found = shutil.which("ffmpeg")
+    if found:
+        _FFMPEG_CACHE = found
+        return found
+    try:
+        import imageio_ffmpeg
+
+        _FFMPEG_CACHE = imageio_ffmpeg.get_ffmpeg_exe()
+        logger.info("ffmpeg (imageio-ffmpeg static): %s", _FFMPEG_CACHE)
+        return _FFMPEG_CACHE
+    except Exception:
+        return None
+
+
 def ffmpeg_available() -> bool:
-    return shutil.which("ffmpeg") is not None
+    return ffmpeg_binary() is not None
 
 
 def _require_ffmpeg() -> str:
-    binary = shutil.which("ffmpeg")
+    binary = ffmpeg_binary()
     if not binary:
-        raise MediaError("ffmpeg မတွေ့ပါ — `apt install ffmpeg` (သို့) PATH ထဲမှာ ထည့်ပါ")
+        raise MediaError(
+            "ffmpeg မတွေ့ပါ — `sudo apt install ffmpeg` (သို့) `pip install imageio-ffmpeg`"
+        )
     return binary
 
 
@@ -144,7 +168,7 @@ def probe_duration(path: str | Path) -> float:
     """ffprobe နဲ့ ကြာချိန် (စက္ကန့်) ယူတယ် — ffprobe မရှိရင် 0.0။"""
     binary = shutil.which("ffprobe")
     if not binary:
-        return 0.0
+        return 0.0  # မရှိရင် ခန့်မှန်းချိန် (tts_service.estimate_duration) ကို သုံးမယ်
     proc = subprocess.run(
         [binary, "-v", "error", "-show_entries", "format=duration",
          "-of", "default=nw=1:nk=1", str(path)],

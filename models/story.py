@@ -56,6 +56,9 @@ class Story:
     characters: list[str] = field(default_factory=list)
     keywords: list[str] = field(default_factory=list)
     created_at: str = field(default_factory=_now)
+    target_chars: int = 0
+    length_ok: bool = True
+    generation_notes: list[str] = field(default_factory=list)
 
     # ------------------------------------------------------------ helpers
     @property
@@ -90,6 +93,9 @@ class Story:
             characters=list(raw.get("characters", [])),
             keywords=list(raw.get("keywords", [])),
             created_at=str(raw.get("created_at", _now())),
+            target_chars=int(raw.get("target_chars", 0) or 0),
+            length_ok=bool(raw.get("length_ok", True)),
+            generation_notes=list(raw.get("generation_notes", [])),
         )
 
     # ------------------------------------------------------------ persistence

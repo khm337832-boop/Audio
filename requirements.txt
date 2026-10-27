@@ -12,9 +12,13 @@ Pillow>=10.0
 uharfbuzz>=0.37
 freetype-py>=2.4
 
-# အသံ / ဗီဒီယို (ffmpeg ကို system မှာ ထည့်ရမယ်)
-f5-myanmar-tts>=0.2.0
+# အသံ / ဗီဒီယို
+edge-tts>=6.1        # ✅ အခမဲ့ မြန်မာ neural voice (my-MM-NilarNeural) — key မလို
+gTTS>=2.5            # အရန် (key မလို)
 pydub>=0.25
+imageio-ffmpeg>=0.5  # ffmpeg မရှိရင် static binary ကို သုံးရန်
+# ကိုယ်ပိုင် fine-tuned မြန်မာ TTS (optional)
+# f5-myanmar-tts>=0.2.0
 
 # YouTube
 google-api-python-client>=2.100
