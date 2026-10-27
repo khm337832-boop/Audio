@@ -8,6 +8,10 @@
 
 ---
 
+> 🚫 **Search Console (Insights) နဲ့ မချိတ်ပါ** — အဲဒါက Google Search မှာ သင့် Page/ဗီဒီယို
+> ဘယ်လောက် ပေါ်လဲ ကြည့်တဲ့ နေရာပါ။ ဗီဒီယို တင်ဖို့ လိုတာက **OAuth client JSON** တစ်ခုတည်း။
+> Search Console ကို ch ချိတ်စရာ မလိုပါ (ချိတ်ထားလည်း ဘာမှ ထပ်မလုပ်ရပါ)။
+
 ## အဆင့် ၀ — ဖိုင်တွေ နေရာမှန် ရှိမရှိ စစ်
 
 Terminal ကို `Audio` folder ထဲ ဖွင့်ပြီး —
@@ -172,6 +176,7 @@ Telegram မှာ `/start` → **🚀 ဇာတ်လမ်းဖန်တီ�
 | `quota exceeded` | မနက်ဖန် ပြန်စမ်း (တစ်ရက် ~၆ ခု) |
 | `channel not found` | youtube.com → Create a channel → `auth` ပြန် run |
 | Browser မ​ပွင့်ဘူး | `python main.py auth --manual` |
+| `accessNotConfigured` / `YouTube Data API has not been used` | Google Cloud → project ရွေး → APIs & Services → Library → **YouTube Data API v3** → **Enable** → ၂-၅ မိနစ် စောင့် |
 | token ကို server ကို ပို့ချင်တယ် | `python main.py auth --export-env` → hosting ရဲ့ env မှာ `YOUTUBE_TOKEN_JSON` ထည့် |
 
 တစ်ချက်ချင်း စစ်ချင်ရင် — `python main.py doctor` (secrets မပါဘဲ အခြေအနေ ပြ)။

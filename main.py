@@ -203,6 +203,25 @@ def cmd_setup(args: argparse.Namespace) -> int:
     return run_wizard()
 
 
+def _explain_youtube_error(message: str) -> None:
+    """YouTube API အမှားကို နားလည်လွယ်တဲ့ ဖြေရှင်းနည်းအဖြစ် ပြောင်းပြီး ပြတယ်။"""
+    from services import youtube_service as ys
+
+    text = (message or "").lower()
+    project = (ys.client_secret_info().get("project_id") or "").strip()
+    url = f"https://console.cloud.google.com/apis/library/youtube.googleapis.com?project={project}"
+    if "accessnotconfigured" in text or "has not been used in project" in text or "disabled" in text:
+        print("\n👉 YouTube Data API v3 ကို project မှာ ဖွင့်မထားပါ")
+        print(f"   {url}")
+        print("   → “Enable” နှိပ်ပြီး ၂-၅ မိနစ် စောင့်ပါ၊ ပြီးရင် ဒီ command ကို ပြန် run")
+    elif "quota" in text:
+        print("\n👉 quota ကုန်သွားပါ (တစ်ရက် 10,000 units ≈ upload ၆ ခု) — မနက်ဖန် ပြန်စမ်းပါ")
+    elif "insufficient" in text or "scope" in text:
+        print("\n👉 ခွင့်ပြုချက် scope မလုံလောက်ပါ — youtube-oauth2.json ဖျက်ပြီး `python main.py auth` ပြန် run")
+    elif "unauthorized" in text or "invalid_grant" in text or "401" in text:
+        print("\n👉 token သက်တမ်းကုန်/ပျက်နေတယ် — `python main.py auth` ကို ပြန် run")
+
+
 def cmd_channel(args: argparse.Namespace) -> int:
     """token က ဘယ် channel ကို ချိတ်ထားလဲ + တင်ခွင့် ရှိမရှိ စစ်တယ်။"""
     from services import youtube_service as ys
@@ -216,9 +235,12 @@ def cmd_channel(args: argparse.Namespace) -> int:
         print(f"❌ {exc}")
         if "token" in str(exc).lower():
             print("\n👉 ဖြေရှင်းနည်း: python main.py auth")
+        else:
+            _explain_youtube_error(str(exc))
         return 1
     except Exception as exc:  # noqa: BLE001
         print(f"❌ YouTube ကို မခေါ်နိုင်ပါ: {exc}")
+        _explain_youtube_error(str(exc))
         return 1
 
     items = response.get("items", [])
