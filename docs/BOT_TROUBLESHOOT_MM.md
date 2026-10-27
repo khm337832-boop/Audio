@@ -66,6 +66,8 @@ python main.py bot
 | Terminal ပိတ်လိုက်တာ / PC sleep | bot process က သေသွား | `python main.py bot` ပြန် run၊ PC ကို sleep မ​ဖြစ်အောင် ထား |
 | `Conflict` + webhook ရှိ | အခြားနေရာက webhook သတ်မှတ်ထား | `python main.py bot` က webhook ကို အလိုလို ဖျက်ပေးတယ် |
 | `handler မှာ error ဖြစ်တယ်` | တစ်ချက် command မှာ error — bot က ဆက်အလုပ်လုပ်တယ် | log ထဲက traceback ကို ပို့ပါ |
+| Render: `No open ports detected` / `Timed Out` | web service မှာ port မ​ဖွင့်ထား | start command → `python main.py serve` ([DEPLOY_RENDER_MM.md](DEPLOY_RENDER_MM.md)) |
+| `404 NOT_FOUND ... model ... no longer available` | Gemini model အဟောင်း | `python main.py models` → `GEMINI_MODEL` အသစ် |
 | `python: can't open file 'bot.py'` | folder မှားနေတယ် | `cd` နဲ့ `bot.py` ရှိတဲ့ folder ထဲ ဝင်ပါ |
 
 ---

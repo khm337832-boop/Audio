@@ -70,7 +70,35 @@ def _procedural_image(prompt: str, path: Path, width: int, height: int, seed: in
     return path
 
 
+def _save_inline_image(response, path: Path) -> bool:
+    """generate_content က ပြန်တဲ့ inline image ကို ဖိုင်အဖြစ် သိမ်းတယ်။"""
+    candidates = getattr(response, "candidates", None) or []
+    for candidate in candidates:
+        content = getattr(candidate, "content", None)
+        for part in getattr(content, "parts", None) or []:
+            inline = getattr(part, "inline_data", None)
+            data = getattr(inline, "data", None) if inline else None
+            if data:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(data)
+                return True
+    # SDK အဟောင်း/အခြားပုံစံ
+    generated = getattr(response, "generated_images", None)
+    if generated:
+        image_bytes = generated[0].image.image_bytes
+        if image_bytes:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(image_bytes)
+            return True
+    return False
+
+
 def _gemini_image(prompt: str, path: Path, width: int, height: int) -> Path | None:
+    """Gemini image model နဲ့ ပုံထုတ်တယ်။ မရရင် None (procedural ကို ဆက်သုံး)。
+
+    `models.generate_images` (Imagen) က Gemini Developer API မှာ မရတော့ပါ —
+    ဒါကြောင့် `generate_content` + image model (gemini-*-image) ကို ဦးစားပေးတယ်။
+    """
     if not config.llm_available():
         return None
     try:
@@ -79,24 +107,50 @@ def _gemini_image(prompt: str, path: Path, width: int, height: int) -> Path | No
         logger.info("google-genai SDK မရှိပါ — procedural ပုံ သုံးမယ်")
         return None
 
+    client = None
     try:
         client = genai.Client(api_key=config.GEMINI_API_KEY)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Gemini client မရပါ (%s)", exc)
+        return None
+
+    aspect = f"{width}:{height}"
+    for model_name in config.gemini_image_candidates():
+        try:
+            response = client.models.generate_content(
+                model=model_name,
+                contents=prompt,
+                config={
+                    "response_modalities": ["IMAGE"],
+                    "image_config": {"aspect_ratio": "16:9" if aspect == "1280:720" else aspect},
+                },
+            )
+            if _save_inline_image(response, path):
+                logger.info("Gemini ပုံ ထုတ်ပြီး (%s): %s", model_name, path)
+                return path
+            logger.info("`%s` က ပုံ မ​ပြန်ပါ — နောက်တစ်ခု စမ်းမယ်", model_name)
+        except Exception as exc:  # noqa: BLE001
+            text = str(exc)
+            if any(m in text.lower() for m in ("404", "not_found", "not supported",
+                                               "no longer available", "unsupported")):
+                logger.info("image model `%s` မရပါ — နောက်တစ်ခု စမ်းမယ်", model_name)
+                continue
+            logger.warning("Gemini ပုံ မထုတ်နိုင်ပါ (%s) — procedural သုံးမယ်", exc)
+            break
+
+    # နောက်ဆုံး ကြိုးစားချက် — Imagen (အချို့ project မှာ ရနိုင်)
+    try:
         response = client.models.generate_images(
-            model=config.GEMINI_IMAGE_MODEL,
+            model="imagen-4.0-generate-001",
             prompt=prompt,
             config={"number_of_images": 1, "aspect_ratio": "16:9"},
         )
-        generated = getattr(response, "generated_images", None)
-        if not generated:
-            return None
-        image_bytes = generated[0].image.image_bytes
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(image_bytes)
-        logger.info("Gemini ပုံ ထုတ်ပြီး: %s", path)
-        return path
-    except Exception as exc:  # API/쿼터/network — fallback
-        logger.warning("Gemini ပုံ မထုတ်နိုင်ပါ (%s) — procedural သုံးမယ်", exc)
-        return None
+        if _save_inline_image(response, path):
+            logger.info("Imagen ပုံ ထုတ်ပြီး: %s", path)
+            return path
+    except Exception as exc:  # noqa: BLE001
+        logger.info("Imagen မရပါ (%s) — procedural သုံးမယ်", exc)
+    return None
 
 
 def generate_scene_image(

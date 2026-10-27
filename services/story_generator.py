@@ -115,9 +115,11 @@ JSON တစ်ခုတည်းသာ ပြန်ပါ:
   "keywords": ["...", "..."],
   "chapter_titles": ["အခန်း ၁ — ...", "အခန်း ၂ — ..."]
 }}"""
+    global _LAST_PLAN_ERROR
     try:
         data = json_fn(prompt, temperature=0.9, max_output_tokens=4096)
     except llm.LLMUnavailable as exc:
+        _LAST_PLAN_ERROR = str(exc)
         logger.info("outline LLM မရပါ — offline ဇာတ်လမ်း သုံးမယ်: %s", exc)
         return None
     if not isinstance(data, dict):
@@ -213,7 +215,10 @@ def _is_duplicate(text: str, chapters: list[Chapter]) -> bool:
 
 
 # ------------------------------------------------------------------ demo (offline)
-def _demo_story(topic: str | None) -> Story:
+_LAST_PLAN_ERROR: str | None = None
+
+
+def _demo_story(topic: str | None, reason: str | None = None) -> Story:
     title = DEMO_TITLE if not topic else clamp_text(topic, 60)
     chapters = [
         Chapter(index=i, title=t, text=body) for i, (t, body) in enumerate(DEMO_CHAPTERS)
@@ -231,8 +236,13 @@ def _demo_story(topic: str | None) -> Story:
         characters=["ကျွန်တော်", "အဘိုး"],
         keywords=["မြန်မာဇာတ်လမ်း", "ထိတ်လန့်ဇာတ်လမ်း", "အသံဇာတ်လမ်း", "ရွာဇာတ်လမ်း"],
     )
+    note = "⚠️ LLM မရလို့ offline demo ဇာတ်လမ်း သုံးထားတယ် (စာလုံးရေ နည်း)"
+    if reason:
+        note += f" — အကြောင်းရင်း: {reason[:160]}"
     story.generation_notes = [
-        "GEMINI_API_KEY မရှိပါ — offline demo ဇာတ်လမ်း (စာလုံးရေ နည်းတယ်)",
+        note,
+        "💡 ဖြေရှင်းရန်: `.env` မှာ GEMINI_API_KEY ထည့်ပါ၊ "
+        "model မရှိတော့ရင် `python main.py models` နဲ့ စစ်ပြီး GEMINI_MODEL ပြောင်းပါ",
     ]
     return story
 
@@ -284,7 +294,7 @@ def generate_full_story(
     report("🧭 ဇာတ်လမ်း အစီအစဉ် ရေးဆွဲနေတယ်...")
     plan = _plan_story(topic, target, language, json_fn=json_fn)
     if plan is None:
-        story = _demo_story(topic)
+        story = _demo_story(topic, reason=_LAST_PLAN_ERROR or "Gemini မခေါ်နိုင်ပါ")
         story.target_chars = target
         story.length_ok = False
         return story
@@ -347,7 +357,7 @@ def generate_full_story(
             break
 
     if not chapters:
-        story = _demo_story(topic)
+        story = _demo_story(topic, reason=_LAST_PLAN_ERROR or "အခန်း ရေးလို့ မရပါ")
         story.target_chars = target
         story.length_ok = False
         return story

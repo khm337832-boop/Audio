@@ -1,5 +1,6 @@
 # core
 aiogram>=3.4,<4
+aiohttp>=3.9          # Render web service အတွက် health server (aiogram ကလည်း သုံးတယ်)
 python-dotenv>=1.0
 requests>=2.31
 

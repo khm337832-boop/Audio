@@ -36,8 +36,25 @@ BOT_TOKEN = os.getenv("BOT_TOKEN", "")
 
 # ---------------------------------------------------------------- LLM (Gemini)
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
-GEMINI_IMAGE_MODEL = os.getenv("GEMINI_IMAGE_MODEL", "imagen-3.0-generate-002")
+# Gemini က အဟောင်း model ကို ရပ်လိုက်တဲ့အခါ အလိုလို နောက်တစ်ခုကို စမ်းနိုင်ရမယ်
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
+_GEMINI_MODEL_FALLBACKS_DEFAULT = (
+    "gemini-3.8-flash",
+    "gemini-2.5-flash",
+    "gemini-flash-latest",
+    "gemini-2.0-flash",
+)
+
+# ပုံအတွက် — generate_content နဲ့ အလုပ်လုပ်တဲ့ image model များ (Imagen က Enterprise-only ဖြစ်သွားပြီ)
+GEMINI_IMAGE_MODEL = os.getenv("GEMINI_IMAGE_MODEL", "gemini-3.8-flash-image")
+_GEMINI_IMAGE_FALLBACKS_DEFAULT = (
+    "gemini-3.8-flash-image",
+    "gemini-2.5-flash-image",
+    "gemini-flash-latest",
+)
+
+# web service (Render) အတွက် — PORT ကို platform က ပေးတယ်
+PORT = int(os.getenv("PORT", "8080"))
 
 # ---------------------------------------------------------------- YouTube
 YOUTUBE_CLIENT_SECRETS = Path(
@@ -98,6 +115,27 @@ THUMBNAIL_MAX_BYTES = 2 * 1024 * 1024  # YouTube hard limit 2MB
 # ---------------------------------------------------------------- runtime
 DRY_RUN = _env_bool("DRY_RUN", False)
 FORCE_MOCK = _env_bool("FORCE_MOCK", False)  # API key ရှိလည်း mock ကိုပဲ သုံးမယ်
+
+
+def _split_env_list(name: str) -> list[str]:
+    raw = os.getenv(name, "")
+    return [item.strip() for item in raw.split(",") if item.strip()]
+
+
+def gemini_model_candidates() -> list[str]:
+    """စမ်းရန် text model စာရင်း — ပထမ GEMINI_MODEL၊ ပြီးရင် fallback များ။"""
+    chain = [GEMINI_MODEL]
+    chain += _split_env_list("GEMINI_MODEL_FALLBACKS")
+    chain += list(_GEMINI_MODEL_FALLBACKS_DEFAULT)
+    return list(dict.fromkeys([m for m in chain if m]))
+
+
+def gemini_image_candidates() -> list[str]:
+    """စမ်းရန် image model စာရင်း။"""
+    chain = [GEMINI_IMAGE_MODEL]
+    chain += _split_env_list("GEMINI_IMAGE_MODELS")
+    chain += list(_GEMINI_IMAGE_FALLBACKS_DEFAULT)
+    return list(dict.fromkeys([m for m in chain if m]))
 
 
 def llm_available() -> bool:

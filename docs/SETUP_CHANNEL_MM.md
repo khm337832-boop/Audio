@@ -229,6 +229,7 @@ python main.py bot
 
 `python main.py bot` က token/webhook ကို အရင်စစ်ပြီး၊ ကွန်ရက် ပြတ်ရင် အလိုလို ပြန်စပါတယ်။
 Bot ရပ်သွားရင် → [`BOT_TROUBLESHOOT_MM.md`](BOT_TROUBLESHOOT_MM.md) (log: `temp/bot.log`)
+Render/cloud မှာ တင်ရင် → [`DEPLOY_RENDER_MM.md`](DEPLOY_RENDER_MM.md) (`python main.py serve`)
 
 Telegram မှာ `/start` → **🚀 ဇာတ်လမ်းဖန်တီးပြီး YouTube တင်မယ်** →
 အကြောင်းအရာ ရိုက်ထည့် (သို့ ကျော်) → အဆင့် ①–⑧ အလိုအလျောက် လုပ်ပြီး **link ပြန်ပို့**မယ်။

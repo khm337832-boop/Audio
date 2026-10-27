@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: audio-bot
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python main.py serve
+    healthCheckPath: /healthz
+    envVars:
+      - key: BOT_TOKEN
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_MODEL
+        value: gemini-3.8-flash
+      - key: TTS_PROVIDER
+        value: edge
+      - key: YOUTUBE_TOKEN_JSON
+        sync: false
+      - key: YOUTUBE_PRIVACY_STATUS
+        value: private
+      - key: PYTHON_VERSION
+        value: "3.11.9"
