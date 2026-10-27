@@ -65,6 +65,8 @@ def _build_parser() -> argparse.ArgumentParser:
                       help="browser မဖွင့်နိုင်ရင် — link ကို copy လုပ်ပြီး code paste လုပ်တဲ့ နည်း")
     auth.add_argument("--port", type=int, help=f"localhost port (default {config.YOUTUBE_OAUTH_PORT})")
     auth.add_argument("--client-secret", help="client_secret.json ဖိုင်လမ်းကြောင်း")
+    auth.add_argument("--import-file", metavar="PATH",
+                      help="Google က ဒေါင်းလုပ်ပေးထားတဲ့ JSON ကို client_secret.json အဖြစ် ထည့်မယ်")
     auth.add_argument("--redirect-uri",
                       help="redirect URI (Web client ဖြစ်ရင် — ဥပမာ http://localhost:8085/)")
     auth.add_argument("--status", action="store_true", help="လက်ရှိ token အခြေအနေ ကြည့်")
@@ -73,6 +75,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("setup", help="BOT_TOKEN / GEMINI_API_KEY ကို စစ်ပြီး .env ထဲ သိမ်းမယ်")
     sub.add_parser("doctor", help="အဆင်သင့်ဖြစ်မှု အကျဉ်းချုပ် (secrets မပါ — ကူးပို့နိုင်တယ်)")
+    sub.add_parser("channel", help="ချိတ်ထားတဲ့ YouTube channel ကို စစ်ဆေးမယ်")
 
     meta = sub.add_parser("metadata", help="ဇာတ်လမ်းအနှစ်ချုပ်နဲ့ အခန်းအချက်အလက် ပြမယ်")
     meta.add_argument("--job-dir", required=True)
@@ -200,6 +203,50 @@ def cmd_setup(args: argparse.Namespace) -> int:
     return run_wizard()
 
 
+def cmd_channel(args: argparse.Namespace) -> int:
+    """token က ဘယ် channel ကို ချိတ်ထားလဲ + တင်ခွင့် ရှိမရှိ စစ်တယ်။"""
+    from services import youtube_service as ys
+
+    try:
+        youtube = ys.get_authenticated_service(interactive=False)
+        response = youtube.channels().list(
+            part="snippet,statistics,contentDetails", mine=True
+        ).execute()
+    except ys.YouTubeError as exc:
+        print(f"❌ {exc}")
+        if "token" in str(exc).lower():
+            print("\n👉 ဖြေရှင်းနည်း: python main.py auth")
+        return 1
+    except Exception as exc:  # noqa: BLE001
+        print(f"❌ YouTube ကို မခေါ်နိုင်ပါ: {exc}")
+        return 1
+
+    items = response.get("items", [])
+    if not items:
+        print("⚠️ token ရှိပေမယ့် YouTube channel မတွေ့ပါ")
+        print("   ① youtube.com → သင့်ပုံ → “Create a channel”")
+        print("   ② ပြီးရင် python main.py auth ကို ပြန် run (channel အသစ် ရွေး)")
+        return 1
+
+    channel = items[0]
+    snippet = channel.get("snippet", {})
+    stats = channel.get("statistics", {})
+    print("✅ Channel ချိတ်ဆက်ပြီး")
+    print(f"   နာမည်: {snippet.get('title')}")
+    print(f"   Channel ID: {channel.get('id')}")
+    print(f"   Subscribers: {stats.get('subscriberCount', '?')} | "
+          f"Videos: {stats.get('videoCount', '?')}")
+    if snippet.get("country"):
+        print(f"   နိုင်ငံ: {snippet.get('country')}")
+    print(f"\n   တင်မယ့် privacy: {config.YOUTUBE_PRIVACY_STATUS} "
+          f"({config.YOUTUBE_CATEGORY_ID} = {config.YOUTUBE_CATEGORY_ID and 'Entertainment'})")
+    print("   ဒီ channel မှန်ရင် — python main.py produce --dry-run နဲ့ စမ်းပါ")
+    print("   channel မှားနေရင် — youtube-oauth2.json ဖျက်ပြီး python main.py auth ကို ပြန် run")
+    if len(items) > 1:
+        print(f"\n   ℹ️ account မှာ channel {len(items)} ခု ရှိတယ် (ပထမတစ်ခုကို သုံးမယ်)")
+    return 0
+
+
 def cmd_doctor(args: argparse.Namespace) -> int:
     from check_setup import compact_report
 
@@ -209,12 +256,32 @@ def cmd_doctor(args: argparse.Namespace) -> int:
 
 def cmd_auth(args: argparse.Namespace) -> int:
     """`python main.py auth` — Google ခွင့်ပြုချက် ယူပြီး token သိမ်းတယ်။"""
-    from services import youtube_service
-
     from services import youtube_service as ys
 
     secret_path = Path(args.client_secret) if args.client_secret else Path(config.YOUTUBE_CLIENT_SECRETS)
     client = ys.client_secret_info(secret_path)
+
+    if args.import_file:
+        import shutil
+
+        src = Path(args.import_file).expanduser()
+        if not src.is_file():
+            print(f"❌ ဖိုင် မတွေ့ပါ: {src}")
+            return 1
+        try:
+            json.loads(src.read_text("utf-8"))
+        except Exception as exc:  # noqa: BLE001
+            print(f"❌ JSON ဖတ်မရပါ: {exc}")
+            return 1
+        target = Path(args.client_secret) if args.client_secret else Path(config.YOUTUBE_CLIENT_SECRETS)
+        shutil.copyfile(src, target)
+        info = ys.client_secret_info(target)
+        print(f"✅ ထည့်ပြီး: {target}")
+        print(f"   အမျိုးအစား: {info.get('type')} | project: {info.get('project_id')}")
+        if info.get("type") == "web":
+            print("   ⚠️ Web client — redirect ထည့်ဖို့ လိုနိုင်တယ် (python main.py auth --status)")
+        print("\n👉 နောက်တစ်ဆင့်: python main.py auth")
+        return 0
 
     if args.export_env:
         try:
@@ -272,7 +339,7 @@ def cmd_auth(args: argparse.Namespace) -> int:
 
     print("🔐 Google ခွင့်ပြုချက် ယူနေတယ်…")
     try:
-        youtube = youtube_service.get_authenticated_service(
+        youtube = ys.get_authenticated_service(
             client_secret_file=secret_path,
             interactive="manual" if args.manual else True,
             force_manual=args.manual,
@@ -313,6 +380,7 @@ def main(argv: list[str] | None = None) -> int:
         "produce": cmd_produce,
         "setup": cmd_setup,
         "doctor": cmd_doctor,
+        "channel": cmd_channel,
         "auth": cmd_auth,
         "publish": cmd_publish,
         "title": cmd_title,
