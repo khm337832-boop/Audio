@@ -390,10 +390,8 @@ def test_describe_auth_status_without_files(tmp_path, monkeypatch):
 
     monkeypatch.setattr(config, "YOUTUBE_CLIENT_SECRETS", tmp_path / "nope.json")
     monkeypatch.setattr(config, "YOUTUBE_TOKEN_FILE", tmp_path / "tok.json")
-    try:
-        info = youtube_service.describe_auth_status()
-    except youtube_service.YouTubeAuthError:
-        pytest.skip("google-api-python-client မထည့်ထားပါ")
+    pytest.importorskip("google.oauth2.credentials", reason="google-auth မထည့်ထားပါ")
+    info = youtube_service.describe_auth_status()
     assert info["client_secret"] is False
     assert info["token_file"] is False
 
@@ -401,16 +399,16 @@ def test_describe_auth_status_without_files(tmp_path, monkeypatch):
 def test_upload_without_token_gives_actionable_error(tmp_path, monkeypatch):
     from services import youtube_service
 
+    pytest.importorskip("googleapiclient", reason="google-api-python-client မထည့်ထားပါ")
+    pytest.importorskip("google_auth_oauthlib", reason="google-auth-oauthlib မထည့်ထားပါ")
+
     monkeypatch.setattr(config, "YOUTUBE_CLIENT_SECRETS", tmp_path / "client_secret.json")
     monkeypatch.setattr(config, "YOUTUBE_TOKEN_FILE", tmp_path / "tok.json")
     monkeypatch.setattr(config, "YOUTUBE_INTERACTIVE", False)
     video = tmp_path / "final.mp4"
     video.write_bytes(b"\x00" * 1024)
-    try:
-        with pytest.raises(youtube_service.YouTubeAuthError) as excinfo:
-            youtube_service.upload_video(video, "t", "d", dry_run=False)
-    except youtube_service.YouTubeAuthError:
-        pytest.skip("google libs မရှိပါ")
+    with pytest.raises(youtube_service.YouTubeAuthError) as excinfo:
+        youtube_service.upload_video(video, "t", "d", dry_run=False)
     assert "main.py auth" in str(excinfo.value)
 
 
@@ -550,9 +548,7 @@ def test_env_token_used_when_file_missing(monkeypatch, tmp_path):
                         base64.b64encode(json.dumps(payload).encode()).decode())
     monkeypatch.setattr(config, "YOUTUBE_TOKEN_FILE", tmp_path / "missing.json")
     monkeypatch.setattr(config, "YOUTUBE_CLIENT_SECRETS", tmp_path / "cs.json")
-    try:
-        info = ys.describe_auth_status()
-    except ys.YouTubeAuthError:
-        pytest.skip("google-auth မရှိပါ")
+    pytest.importorskip("google.oauth2.credentials", reason="google-auth မထည့်ထားပါ")
+    info = ys.describe_auth_status()
     assert info.get("token_env") is True
     assert info.get("token_source") == "env"
