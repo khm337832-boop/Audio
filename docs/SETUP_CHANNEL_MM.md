@@ -58,32 +58,90 @@ screenshot မှာ “OAuth access is restricted to the test users” လိ�
 
 ---
 
-## အဆင့် ၃ — ဖိုင်ကို နေရာချ (rename မလိုဘဲ)
+## အဆင့် ၃ — JSON ကို နေရာချ (နည်း ၃ မျိုး — တစ်ခု ရွေးပါ)
+
+ဒေါင်းလုပ်လုပ်ထားတဲ့ ဖိုင်နာမည်က ရှည်တယ် —
+`client_secret_449998066874_16u8bic572b21ek1acu8gdht8hsecfqa_apps.json`
+
+ဒါကို **`client_secret.json`** နာမည်နဲ့ **`bot.py` ရှိတဲ့ folder ထဲ** ထည့်ရမယ်။
+အောက်က နည်း ၃ မျိုးထဲက သင့်အခြေအနေနဲ့ ကိုက်တာကို ရွေးပါ။
+
+### 🟢 နည်း A — command တစ်ကြောင်းတည်း (အကြံပြု)
+
+**Windows (Command Prompt / PowerShell)**
+
+```bat
+cd %USERPROFILE%\Audio
+python main.py auth --import-file "%USERPROFILE%\Downloads\client_secret_449998066874_16u8bic572b21ek1acu8gdht8hsecfqa_apps.json"
+```
+
+**macOS / Linux**
 
 ```bash
-python main.py auth --import-file "C:\Users\You\Downloads\client_secret_1234....json"
-# macOS/Linux: python main.py auth --import-file ~/Downloads/client_secret_1234....json
+cd ~/Audio
+python main.py auth --import-file ~/Downloads/client_secret_449998066874_16u8bic572b21ek1acu8gdht8hsecfqa_apps.json
 ```
 
-ဒီ command က ဖိုင်ကို စစ်ပြီး `client_secret.json` အဖြစ် **အလိုအလျောက် ကူးထည့်**ပေးတယ်။
+> 💡 ဖိုင်လမ်းကြောင်း မသေချာရင် — `Downloads` folder ထဲမှာ ဖိုင်ကို နှိပ်ပြီး
+> “Copy path / လမ်းကြောင်း ကူးယူ” ကို သုံးပါ။ Windows မှာ `Shift + Right click` → “Copy as path”
+> က လမ်းကြောင်းကို `"…"` အုပ်ပြီး ကူးပေးတယ်။
+
+အောင်ရင် —
 
 ```
-✅ ထည့်ပြီး: /…/Audio/client_secret.json
+✅ ထည့်ပြီး: …/Audio/client_secret.json
    အမျိုးအစား: installed | project: myyoutubebot-512616
-
 👉 နောက်တစ်ဆင့်: python main.py auth
 ```
 
-**`အမျိုးအစား`** က —
-- `installed` ✅ = Desktop app (အကောင်းဆုံး)
-- `web` ⚠️ = Web app → `http://localhost:8085/` ကို Google Console ရဲ့
-  **Authorized redirect URIs** မှာ ထည့်ရမယ်
+### 🔵 နည်း B — JSON စာသားကို paste (ဖိုင် ရှာမတွေ့ရင်)
+
+1. Downloads ထဲက အဲဒီ `.json` ဖိုင်ကို **Notepad / VS Code / TextEdit** နဲ့ ဖွင့်
+2. စာသားအားလုံး ကို select all → copy (`{` နဲ့ စပြီး `}` နဲ့ ဆုံးတယ်)
+3. Terminal မှာ —
 
 ```bash
-python main.py auth --status     # စစ်ချင်ရင်
+python main.py auth --paste-secret
 ```
 
----
+4. JSON ကို paste လုပ် → Enter → **Ctrl+D** (`Windows: Ctrl+Z ပြီး Enter`)
+
+```
+✅ သိမ်းပြီး: …/Audio/client_secret.json
+   အမျိုးအစား: installed
+```
+
+### 🟡 နည်း C — File Manager နဲ့ ကိုယ်တိုင်
+
+1. `Downloads` ထဲမှာ ဖိုင်ကို ရှာ → **Rename** → `client_secret.json`
+   *(Windows မှာ “file name extensions” ပြထားဖို့ လိုတယ် — မဟုတ်ရင် `client_secret.json.txt` ဖြစ်သွားနိုင်)*
+2. **Copy** → `Audio` folder (bot.py ရှိတဲ့နေရာ) ထဲ **Paste**
+3. စစ် —
+
+```bash
+python main.py auth --status
+```
+
+### ✅ စစ်ဆေး (ဘယ်နည်းနဲ့ ထည့်ထည့်)
+
+```bash
+python main.py auth --status
+```
+
+```
+client_secret.json: ✅ ရှိ  (C:\Users\You\Audio\client_secret.json)
+  အမျိုးအစား: installed  project: myyoutubebot-512616
+  redirect URIs: http://localhost
+youtube-oauth2.json: ❌ မရှိ          ← ဒါက အဆင့် ၄ မှာ ဖြစ်လာမယ်
+```
+
+| ပြရင် | ဘာလုပ်မလဲ |
+|---|---|
+| `installed` | ✅ အကောင်းဆုံး — အဆင့် ၄ ဆက်သွား |
+| `web` | ⚠️ `http://localhost:8085/` ကို Console → Authorized redirect URIs မှာ ထည့် (သို့) Desktop client အသစ် |
+| `❌ မရှိ` | နေရာ/နာမည် မှန်း​ကြောင်း ပြန်စစ် (`client_secret.json.txt` ဖြစ်နေလား) |
+
+> 🔒 ဒီဖိုင်က လျှို့ဝှက် — chat မှာ မ​ပို့ပါ၊ GitHub မ​တင်ပါ (`.gitignore` မှာ ပါပြီးသား)။
 
 ## အဆင့် ၄ — Google ခွင့်ပြုချက် ယူ (token)
 

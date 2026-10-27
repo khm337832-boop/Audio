@@ -118,6 +118,7 @@ python main.py auth            # browser ပွင့်တဲ့ စက်အ�
 python main.py auth --manual   # browser မပွင့်ရင် (link copy → code paste)
 python main.py auth --status      # client အမျိုးအစား + token အခြေအနေ
 python main.py auth --import-file ~/Downloads/client_secret_….json   # rename မလိုဘဲ ထည့်
+python main.py auth --paste-secret                                 # JSON စာသား paste လုပ်ပြီး ထည့်
 python main.py channel            # ချိတ်ထားတဲ့ channel ကို စစ်
 python main.py auth --export-env # cloud အတွက် YOUTUBE_TOKEN_JSON=… ထုတ်
 # ✅ ချိတ်ဆက်ပြီး — channel: <သင့် channel> (subscribers: …)

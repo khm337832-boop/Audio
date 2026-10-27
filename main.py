@@ -68,6 +68,8 @@ def _build_parser() -> argparse.ArgumentParser:
     auth.add_argument("--client-secret", help="client_secret.json ဖိုင်လမ်းကြောင်း")
     auth.add_argument("--import-file", metavar="PATH",
                       help="Google က ဒေါင်းလုပ်ပေးထားတဲ့ JSON ကို client_secret.json အဖြစ် ထည့်မယ်")
+    auth.add_argument("--paste-secret", action="store_true",
+                      help="JSON စာသားကို terminal မှာ paste လုပ်ပြီး client_secret.json ဖန်တီးမယ်")
     auth.add_argument("--redirect-uri",
                       help="redirect URI (Web client ဖြစ်ရင် — ဥပမာ http://localhost:8085/)")
     auth.add_argument("--status", action="store_true", help="လက်ရှိ token အခြေအနေ ကြည့်")
@@ -288,6 +290,43 @@ def cmd_auth(args: argparse.Namespace) -> int:
 
     secret_path = Path(args.client_secret) if args.client_secret else Path(config.YOUTUBE_CLIENT_SECRETS)
     client = ys.client_secret_info(secret_path)
+
+    if args.paste_secret:
+        print("📋 JSON စာသားတစ်ခုလုံးကို ဒီမှာ paste လုပ်ပါ")
+        print("   (Notepad/browser က ဖိုင်ထဲက စာသားအားလုံး — { နဲ့ စပြီး } နဲ့ ဆုံးတယ်)")
+        print("   paste ပြီးရင် — Enter နှိပ်၊ ပြီးရင် Ctrl+D (Windows: Ctrl+Z ပြီး Enter)")
+        try:
+            raw = sys.stdin.read()
+        except KeyboardInterrupt:
+            print("\nပယ်ဖျက်လိုက်တယ်")
+            return 1
+        raw = (raw or "").strip()
+        if not raw:
+            print("❌ စာသား မရပါ — ဘာမှ မ​ထည့်ဘဲ ထွက်သွားတယ်")
+            return 1
+        try:
+            data = json.loads(raw)
+        except Exception as exc:  # noqa: BLE001
+            print(f"❌ JSON ဖတ်မရပါ: {exc}")
+            print("   ဖိုင်တစ်ခုလုံးကို copy လုပ်ပါ (တစ်စိတ်တစ်ပိုင်း မဖြစ်ရ)")
+            return 1
+        if not any(k in data for k in ("installed", "web")):
+            print("❌ ဒါ OAuth client JSON မဟုတ်ပါ (installed/web key မတွေ့)")
+            return 1
+        target = Path(args.client_secret) if args.client_secret else Path(config.YOUTUBE_CLIENT_SECRETS)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(json.dumps(data, indent=2), "utf-8")
+        try:
+            target.chmod(0o600)
+        except Exception:  # Windows မှာ မရနိုင်
+            pass
+        info = ys.client_secret_info(target)
+        print(f"\n✅ သိမ်းပြီး: {target}")
+        print(f"   အမျိုးအစား: {info.get('type')} | project: {info.get('project_id')}")
+        if info.get("type") == "web":
+            print("   ⚠️ Web client — redirect ထည့်ဖို့ လိုနိုင် (python main.py auth --status)")
+        print("\n👉 နောက်တစ်ဆင့်: python main.py auth")
+        return 0
 
     if args.import_file:
         import shutil
