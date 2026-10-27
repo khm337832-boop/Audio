@@ -230,6 +230,20 @@ def compact_report() -> str:
 
     lines.append(f"env_file={flag(Path('.env').is_file())}")
     lines.append(f"bot_token={'set' if config.BOT_TOKEN else 'missing'}")
+    try:
+        from utils.telegram import token_problem
+
+        if config.BOT_TOKEN:
+            problem = token_problem(config.BOT_TOKEN)
+            if problem:
+                lines.append(f"bot_token_format=bad ({problem[:40]})")
+            else:
+                lines.append("bot_token_format=ok")
+        bot_log = config.TEMP_DIR / "bot.log"
+        if bot_log.is_file():
+            lines.append(f"bot_log={bot_log} ({bot_log.stat().st_size // 1024}KB)")
+    except Exception:  # bot module မရှိရင်လည်း ဆက်သွား
+        pass
     lines.append(f"gemini_key={'set' if config.GEMINI_API_KEY else 'missing'}")
     lines.append(f"dry_run={config.DRY_RUN} force_mock={config.FORCE_MOCK}")
 

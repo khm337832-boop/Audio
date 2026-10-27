@@ -9,14 +9,24 @@
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import logging
+import os
 import shutil
+import sys
 import time
 from datetime import datetime
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 from aiogram import Bot, Dispatcher, F, types
+from aiogram.exceptions import (
+    TelegramConflictError,
+    TelegramNetworkError,
+    TelegramRetryAfter,
+    TelegramUnauthorizedError,
+)
 from aiogram.filters import Command
 from aiogram.client.default import DefaultBotProperties
 from aiogram.fsm.storage.memory import MemoryStorage
@@ -204,12 +214,9 @@ async def _publish_existing(message: types.Message, job_dir: Path, dry_run: bool
     await _safe_edit(status, "\n".join(lines))
 
 
-# ===================================================================== main
-def main() -> None:
-    if not config.BOT_TOKEN:
-        raise SystemExit("BOT_TOKEN မရှိပါ — .env ထဲမှာ သတ်မှတ်ပါ")
-
-    bot = Bot(token=config.BOT_TOKEN, default=DefaultBotProperties(parse_mode="HTML"))
+# ===================================================================== dispatcher
+def build_dispatcher(bot: Bot) -> Dispatcher:
+    """Handler အားလုံးကို မှတ်ပုံတင်ပြီး Dispatcher ပြန်ပေးတယ်။"""
     dp = Dispatcher(storage=MemoryStorage())
     dp.include_router(start_handler.router)
 
@@ -291,12 +298,173 @@ def main() -> None:
             removed += 1
         await message.answer(f"🧹 job folder {removed} ခု ဖျက်ပြီး")
 
-    logger.info("Bot စတင်နေပါပြီ…")
-    asyncio.run(dp.start_polling(bot))
+    # handler ထဲက မမျှော်လင့်တဲ့ error ကို log ချပြီး bot ကို ဆက်အလုပ်လုပ်စေမယ်
+    @dp.errors()
+    async def on_error(event) -> bool:  # noqa: ANN001
+        logger.exception("handler မှာ error ဖြစ်တယ်: %s", event.exception)
+        return True
+
+    return dp
+
+
+# ===================================================================== preflight
+from utils.telegram import mask_token, token_problem  # noqa: E402
+
+_mask = mask_token
+
+
+async def preflight(bot: Bot) -> bool:
+    """Bot token + webhook အခြေအနေ စစ်တယ်။ ဆက်လုပ်နိုင်ရင် True။"""
+    try:
+        me = await bot.get_me()
+    except TelegramUnauthorizedError:
+        print("❌ Token မှားနေတယ် (Telegram က လက်မခံပါ)")
+        print("   → BotFather (@BotFather) → /mybots → သင့် bot → API Token → ပြန်ယူပြီး")
+        print("     .env ထဲ BOT_TOKEN=… ကို အစားထိုးပါ (bot ကို revoke လုပ်ထားရင် token အသစ် လိုတယ်)")
+        return False
+    except TelegramNetworkError as exc:
+        print(f"❌ Telegram API ကို မချိတ်နိုင်ပါ: {exc}")
+        print("   → အင်တာနက်/VPN စစ်ပါ။ VPN သုံးရင် တစ်ခါ ပိတ်ကြည့်ပါ")
+        print("   → api.telegram.org ကို ပိတ်ထားတဲ့ network (ကုမ္ပဏီ/ကျောင်း) ဖြစ်နိုင်")
+        return False
+    except Exception as exc:  # noqa: BLE001
+        print(f"❌ Bot စစ်ဆေးမှု မအောင်မြင်ပါ: {exc}")
+        return False
+
+    print(f"✅ Token မှန်တယ် — @{me.username} (id {me.id})")
+    webhook = await bot.get_webhook_info()
+    if webhook.url:
+        print(f"ℹ️ Webhook ချိတ်ထားတယ် ({webhook.url}) — polling အတွက် ဖျက်မယ်")
+        await bot.delete_webhook(drop_pending_updates=False)
+        print("✅ Webhook ဖျက်ပြီး")
+    else:
+        print("✅ Webhook မရှိပါ (polling အတွက် ကောင်းတယ်)")
+    print("ℹ️ ဖုန်းမှာ bot ကို /start နှိပ်ထားဖို့ လိုတယ်")
+    return True
+
+
+def _setup_logging(log_file: Path | None) -> Path | None:
+    if log_file is None:
+        return None
+    log_file.parent.mkdir(parents=True, exist_ok=True)
+    handler = RotatingFileHandler(log_file, maxBytes=2 * 1024 * 1024, backupCount=3,
+                                  encoding="utf-8")
+    handler.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
+    handler.setLevel(logging.INFO)
+    logging.getLogger().addHandler(handler)
+    return log_file
+
+
+# ===================================================================== runner
+def run_bot(*, restart: bool = True, check_only: bool = False,
+            log_file: Path | None = None, max_retries: int = 5) -> int:
+    """Bot ကို run လုပ်တယ်။ `check_only` ဆိုရင် စစ်ဆေးပြီး ပြန်ထွက်တယ်။"""
+    problem = token_problem(config.BOT_TOKEN)
+    if problem:
+        print(f"❌ {problem}")
+        print("\n   .env ဖိုင် (bot.py ရှိတဲ့ folder) ထဲမှာ ဒီလို ထည့်ပါ:")
+        print("   BOT_TOKEN=123456789:AAF...")
+        print("   ပြီးရင်: python main.py bot")
+        print("   လမ်းညွှန်: docs/BOT_TROUBLESHOOT_MM.md")
+        return 2
+    if os.getenv("BOT_TOKEN", "").strip() != config.BOT_TOKEN.strip():
+        print("ℹ️ BOT_TOKEN ကို environment မှ မဟုတ်ဘဲ .env မှ ဖတ်ထားတယ်")
+
+    log_path = _setup_logging(log_file if log_file is not None else TEMP_DIR / "bot.log")
+
+    if check_only:
+        try:
+            ok = asyncio.run(_serve(check_only=True))
+        except KeyboardInterrupt:
+            return 0
+        if log_path:
+            print(f"📝 log: {log_path}")
+        return 0 if ok else 1
+
+    attempt = 0
+    while True:
+        attempt += 1
+        print(f"\n🤖 Bot စတင်နေတယ် (token {_mask(config.BOT_TOKEN)}, ကြိုးစားမှု {attempt})")
+        if log_path:
+            print(f"📝 log: {log_path}")
+        print("   ရပ်ချင်ရင် Ctrl+C နှိပ်ပါ\n")
+        try:
+            logger.info("Bot စတင်နေပါပြီ…")
+            ok = asyncio.run(_serve(check_only=False))
+            if not ok:
+                return 1
+            print("ℹ️ Bot ရပ်သွားတယ် (polling ပြီးဆုံး)")
+            return 0
+        except KeyboardInterrupt:
+            print("\n⏹ Ctrl+C — Bot ရပ်လိုက်တယ်")
+            return 0
+        except TelegramUnauthorizedError:
+            print("❌ Token မှားနေတယ် — BotFather က token ပြန်ယူပါ")
+            return 2
+        except TelegramConflictError:
+            print("❌ အခြား bot instance တစ်ခု run နေတယ် (တူတူ token နဲ့ ၂ ခု မရပါ)")
+            print("   → အရင် terminal/ဝင်းဒိုး က bot ကို ပိတ်ပါ (သို့) PC ပြန် restart လုပ်ပါ")
+            print("   → ဖုန်း/ဆာဗာ (Render) မှာလည်း run နေတာ မရှိရပါ")
+            return 3
+        except TelegramRetryAfter as exc:
+            wait = exc.retry_after
+            print(f"⏳ Telegram က {wait} စက္ကန့် စောင့်ခိုင်းတယ်…")
+            time.sleep(wait + 1)
+            continue
+        except (TelegramNetworkError, OSError) as exc:
+            if not restart:
+                print(f"❌ ကွန်ရက် error: {exc}")
+                return 1
+            wait = min(60, 5 * attempt)
+            print(f"⚠️ ကွန်ရက် error: {exc}\n   {wait} စက္ကန့်နောက် ပြန်ကြိုးစားမယ်…")
+            time.sleep(wait)
+            continue
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("Bot ရပ်သွားတယ်")
+            print(f"❌ Bot ရပ်သွားတယ်: {type(exc).__name__}: {exc}")
+            if log_path:
+                print(f"   အသေးစိတ်: {log_path}")
+            if not restart or attempt >= max_retries:
+                print("   ဒီ error ကို ပို့ပြီး ကူညီတောင်းပါ — secret မလိုပါ")
+                return 1
+            wait = min(60, 5 * attempt)
+            print(f"   {wait} စက္ကန့်နောက် ပြန်ကြိုးစားမယ်…")
+            time.sleep(wait)
+            continue
+
+
+async def _serve(*, check_only: bool) -> bool:
+    """တစ်ကြိမ် run — bot + polling ကို loop တစ်ခုတည်းမှာ လုပ်တယ်။ အောင်ရင် True။"""
+    bot = Bot(token=config.BOT_TOKEN, default=DefaultBotProperties(parse_mode="HTML"))
+    try:
+        ok = await preflight(bot)
+        if not ok:
+            return False
+        if check_only:
+            return True
+        dp = build_dispatcher(bot)
+        await dp.start_polling(bot, handle_signals=True)
+        return True
+    finally:
+        try:
+            await bot.session.close()
+        except Exception:  # noqa: BLE001
+            pass
+
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Telegram bot (YouTube auto pipeline)")
+    parser.add_argument("--check", action="store_true", help="Token/webhook ကို စစ်ပြီး ပြန်ထွက်")
+    parser.add_argument("--no-restart", action="store_true", help="Error ရင် ပြန် မ​ကြိုးစားဘဲ ထွက်")
+    parser.add_argument("--log-file", default=None, help="log ဖိုင် (default: temp/bot.log)")
+    return parser.parse_args(argv)
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = parse_args(argv)
+    log_file = Path(args.log_file) if args.log_file else None
+    return run_bot(restart=not args.no_restart, check_only=args.check, log_file=log_file)
 
 
 if __name__ == "__main__":
-    try:
-        main()
-    except KeyboardInterrupt:
-        logger.info("Bot ရပ်လိုက်ပါပြီ")
+    sys.exit(main())

@@ -75,6 +75,10 @@ python check_setup.py           # ✅ ⚠️ ❌ စစ်ဆေးခြင်�
 | `TTS_COMMAND` / `ELEVENLABS_API_KEY` | voice over — **မလိုအပ်ပါ**၊ `pip install edge-tts` က အခမဲ့ မြန်မာအသံ ပေးတယ် |
 | `client_secret.json` + `python main.py auth` | YouTube တကယ်တင်ရန် → [လမ်းညွှန်](docs/YOUTUBE_AUTH_MM.md) |
 
+> 🔁 Google က Gemini model ပိတ်လိုက်ရင် (`404 ... no longer available`) —
+> `.env` မှာ `GEMINI_MODEL` အသစ် ထည့်ပါ။ ရနိုင်တဲ့ စာရင်းကို `python main.py models` နဲ့ ကြည့်နိုင်တယ်။
+> fallback model များကို အလိုလို စမ်းပေးတာမို့ များသောအားဖြင့် ကိုယ်တိုင် မ​ပြင်ရပါ။
+
 ## အသံ (voice over) — ရွေးချယ်စရာ ၄ မျိုး
 
 | Provider | key လိုသလား | မြန်မာ | မှတ်ချက် |
@@ -138,13 +142,34 @@ token ကို `youtube-oauth2.json` မှာ သိမ်းထားတာ�
 ### Telegram
 
 ```bash
-python bot.py
+python main.py bot            # token/webhook စစ်ပြီး run (ရပ်ရင် အလိုလို ပြန်စ)
+python main.py bot --check    # စစ်ဆေးရုံပဲ
 ```
+
+> Bot ရပ်သွားရင် (သို့) `Conflict` / token error ရရင် —
+> [`docs/BOT_TROUBLESHOOT_MM.md`](docs/BOT_TROUBLESHOOT_MM.md) ကို ကြည့်ပါ။
+> Log က `temp/bot.log` (secret မပါ — ကူးပို့နိုင်တယ်)။
+> `python bot.py` နဲ့လည်း run နိုင်တယ် (command အဟောင်း)။
 
 - **🚀 ဇာတ်လမ်းဖန်တီးပြီး YouTube တင်မယ်** → အကြောင်းအရာ ရိုက်ထည့် (သို့ ကျော်) → အဆင့် ၁-၈
 - **🧪 စမ်းသပ် (dry-run)** → YouTube API မခေါ်ဘဲ ဗီဒီယို/thumbnail/SEO payload ထုတ်
 - **ဗီဒီယိုဖိုင် ပို့** → “🎬 YouTube တင်မယ်” / “🧪 dry-run” ခလုတ် ပေါ်လာ
 - `/cleanup` → temp/job folder များ ဖျက်
+
+### Cloud (Render) မှာ တင်ရန်
+
+```bash
+python main.py serve        # bot + HTTP health server (Render web service)
+python main.py models       # Gemini မှာ ရနိုင်တဲ့ model စာရင်း (404 ဖြေရှင်းရန်)
+```
+
+- Render **Start Command** = `python main.py serve`, **Health Check Path** = `/healthz`
+- `render.yaml` ပါပြီး — Blueprint နဲ့ တစ်ခါတည်း သတ်မှတ်နိုင်တယ်
+- 📖 [`docs/DEPLOY_RENDER_MM.md`](docs/DEPLOY_RENDER_MM.md)
+  (deploy failed / no open ports / model 404 / free plan sleep ဖြေရှင်းနည်း)
+
+⚠️ `No open ports detected` ဆိုရင် start command က `python bot.py` ဖြစ်နေလို့ပါ —
+`python main.py serve` ကို ပြောင်းပါ။
 
 ### CLI
 

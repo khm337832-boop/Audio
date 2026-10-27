@@ -617,3 +617,129 @@ def test_paste_secret_rejects_garbage(tmp_path, monkeypatch):
     monkeypatch.setattr("sys.stdin", io.StringIO("hello world"))
     assert cli.main(["auth", "--paste-secret"]) == 1
     assert not (tmp_path / "cs.json").exists()
+
+
+# ------------------------------------------------------------------ bot runner
+def test_token_problem_detects_common_mistakes():
+    import bot as bot_module
+
+    assert bot_module.token_problem("") is not None
+    assert bot_module.token_problem("123456789") is not None          # colon မပါ
+    assert bot_module.token_problem("123 456789:AAFakeTokenForTestingOnly1234567890") is not None
+    good = "123456789:AAFakeTokenForTestingOnly1234567890abcd"
+    assert bot_module.token_problem(good) is None
+
+
+def test_run_bot_without_token_returns_2(monkeypatch, capsys):
+    import bot as bot_module
+
+    monkeypatch.setattr(config, "BOT_TOKEN", "")
+    assert bot_module.run_bot(restart=False) == 2
+    out = capsys.readouterr().out
+    assert "BOT_TOKEN" in out
+    assert "python main.py bot" in out
+
+
+def test_bot_mask_hides_secret():
+    import bot as bot_module
+
+    masked = bot_module._mask("123456789:AAFakeTokenForTestingOnly1234567890abcd")
+    assert masked.startswith("123456789:")
+    assert "AAFakeToken" not in masked
+
+
+def test_main_bot_command_wired(monkeypatch):
+    """`python main.py bot --check` က bot module ဆီ မှန်ကန်စွာ ပို့ရမယ်။"""
+    import main as cli
+
+    calls = {}
+
+    def fake_run_bot(**kwargs):
+        calls.update(kwargs)
+        return 0
+
+    import bot as bot_module
+
+    monkeypatch.setattr(bot_module, "run_bot", fake_run_bot)
+    assert cli.main(["bot", "--check", "--no-restart", "--log-file", "x.log"]) == 0
+    assert calls["check_only"] is True
+    assert calls["restart"] is False
+    assert str(calls["log_file"]).endswith("x.log")
+
+
+# ------------------------------------------------------ Gemini model fallback
+def test_gemini_model_falls_back_when_404(monkeypatch):
+    """အဟောင်း model ကို Google က ပိတ်လိုက်ရင် နောက်တစ်ခုကို အလိုလို စမ်းရမယ်။"""
+    from types import SimpleNamespace
+
+    from services import llm
+
+    monkeypatch.setattr(config, "GEMINI_API_KEY", "test-key")
+    monkeypatch.setattr(config, "GEMINI_MODEL", "gemini-2.0-flash")
+    monkeypatch.setattr(config, "DRY_RUN", False)
+    monkeypatch.setattr(config, "FORCE_MOCK", False)
+    monkeypatch.setattr(llm, "_working_model", None)
+
+    calls: list[str] = []
+
+    class FakeModels:
+        def generate_content(self, model, contents, config):  # noqa: A002, ANN001
+            calls.append(model)
+            if model == "gemini-2.0-flash":
+                raise RuntimeError(
+                    "404 NOT_FOUND. This model models/gemini-2.0-flash is no longer available."
+                )
+            return SimpleNamespace(text="မြန်မာ ဇာတ်လမ်း")
+
+    class FakeClient:
+        models = FakeModels()
+
+    monkeypatch.setattr(llm, "_new_client", lambda: FakeClient())
+    assert llm.generate_text("hi") == "မြန်မာ ဇာတ်လမ်း"
+    assert calls[0] == "gemini-2.0-flash"
+    assert calls[1] == "gemini-3.8-flash"
+    assert llm.working_model() == "gemini-3.8-flash"
+    monkeypatch.setattr(llm, "_working_model", None)
+
+
+def test_model_candidates_dedupe_and_order(monkeypatch):
+    monkeypatch.setattr(config, "GEMINI_MODEL", "custom-model")
+    monkeypatch.delenv("GEMINI_MODEL_FALLBACKS", raising=False)
+    chain = config.gemini_model_candidates()
+    assert chain[0] == "custom-model"
+    assert "gemini-3.8-flash" in chain
+    assert len(chain) == len(set(chain))
+
+
+# ------------------------------------------------------------ serve (Render)
+def test_serve_status_payload_hides_secrets(monkeypatch):
+    import serve
+
+    monkeypatch.setattr(config, "BOT_TOKEN", "123456789:AAFakeTokenForTestingOnly1234567890abcd")
+    payload = serve._status_payload()
+    assert payload["token"] == "set"
+    assert payload["ok"] is True
+    assert "AAFakeToken" not in str(payload)
+
+
+def test_serve_web_app_has_health_routes():
+    import serve
+
+    app = serve.build_web_app()
+    paths = {route.resource.canonical for route in app.router.routes()}
+    assert {"/", "/healthz", "/status"} <= paths
+
+
+def test_main_serve_command_wired(monkeypatch):
+    import main as cli
+    import serve
+
+    called = {}
+
+    def fake_run(port):
+        called["port"] = port
+        return 0
+
+    monkeypatch.setattr(serve, "run", fake_run)
+    assert cli.main(["serve", "--port", "9099"]) == 0
+    assert called["port"] == 9099

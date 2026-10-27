@@ -80,6 +80,22 @@ def _build_parser() -> argparse.ArgumentParser:
     sub.add_parser("doctor", help="အဆင်သင့်ဖြစ်မှု အကျဉ်းချုပ် (secrets မပါ — ကူးပို့နိုင်တယ်)")
     sub.add_parser("channel", help="ချိတ်ထားတဲ့ YouTube channel ကို စစ်ဆေးမယ်")
 
+    bot_cmd = sub.add_parser("bot", help="Telegram bot ကို run (token/webhook စစ်ပြီး၊ ရပ်ရင် ပြန်စ)")
+    bot_cmd.add_argument("--check", action="store_true",
+                         help="Token + webhook ကို စစ်ပြီး ပြန်ထွက် (bot မ​runဘူး)")
+    bot_cmd.add_argument("--no-restart", action="store_true",
+                         help="Error ဖြစ်ရင် ပြန်မ​ကြိုးစားဘဲ ထွက်")
+    bot_cmd.add_argument("--log-file", default=None,
+                         help="log ဖိုင် (default: temp/bot.log)")
+
+    serve_cmd = sub.add_parser(
+        "serve", help="Render/web service အတွက် — bot + HTTP health server တွဲ run"
+    )
+    serve_cmd.add_argument("--port", type=int, default=None,
+                           help="port (default: $PORT သို့ 8080)")
+
+    sub.add_parser("models", help="Gemini မှာ ရနိုင်တဲ့ model စာရင်း (404 ဖြေရှင်းရန်)")
+
     meta = sub.add_parser("metadata", help="ဇာတ်လမ်းအနှစ်ချုပ်နဲ့ အခန်းအချက်အလက် ပြမယ်")
     meta.add_argument("--job-dir", required=True)
 
@@ -432,6 +448,64 @@ def cmd_auth(args: argparse.Namespace) -> int:
         return 1
 
 
+def cmd_bot(args: argparse.Namespace) -> int:
+    """`python main.py bot` — preflight စစ်ပြီး bot ကို run (ရပ်ရင် ပြန်စ)။"""
+    import bot as bot_module
+
+    return bot_module.run_bot(
+        restart=not args.no_restart,
+        check_only=args.check,
+        log_file=Path(args.log_file) if args.log_file else None,
+    )
+
+
+def cmd_serve(args: argparse.Namespace) -> int:
+    """`python main.py serve` — Render web service အတွက် (port bind + bot)။"""
+    import serve
+
+    return serve.run(args.port)
+
+
+def cmd_models(args: argparse.Namespace) -> int:
+    """`python main.py models` — key နဲ့ ရနိုင်တဲ့ Gemini model စာရင်း ပြတယ်။"""
+    if not config.GEMINI_API_KEY:
+        print("❌ GEMINI_API_KEY မရှိပါ — .env မှာ ထည့်ပါ (သို့) python main.py setup")
+        return 1
+    print(f"🔎 သတ်မှတ်ထားတဲ့ model: {config.GEMINI_MODEL}")
+    print(f"   fallback: {', '.join(config.gemini_model_candidates()[1:])}")
+    print(f"   ပုံ model: {', '.join(config.gemini_image_candidates())}")
+    try:
+        from google import genai
+
+        client = genai.Client(api_key=config.GEMINI_API_KEY)
+        names = []
+        for model in client.models.list():
+            name = getattr(model, "name", "") or ""
+            name = name.removeprefix("models/")
+            if name:
+                names.append(name)
+    except Exception as exc:  # noqa: BLE001
+        print(f"❌ model စာရင်း ယူမရပါ: {exc}")
+        print("   → အင်တာနက်/key စစ်ပါ၊ (သို့) GEMINI_MODEL ကို ကိုယ်တိုင် ပြောင်းစမ်းပါ")
+        return 1
+    if not names:
+        print("⚠️ model မတွေ့ပါ")
+        return 1
+    text_models = sorted(n for n in names if "image" not in n and "embed" not in n)
+    image_models = sorted(n for n in names if "image" in n)
+    print(f"\n✅ ရနိုင်တဲ့ text model {len(text_models)} ခု:")
+    for name in text_models:
+        mark = " ← သတ်မှတ်ထား" if name == config.GEMINI_MODEL else ""
+        print(f"   - {name}{mark}")
+    if image_models:
+        print(f"\n🖼️ ရနိုင်တဲ့ image model {len(image_models)} ခု:")
+        for name in image_models:
+            print(f"   - {name}")
+    print("\n👉 သင့် model မပါရင် .env မှာ ဥပမာ: GEMINI_MODEL="
+          f"{text_models[0] if text_models else 'gemini-3.8-flash'}")
+    return 0
+
+
 def cmd_metadata(args: argparse.Namespace) -> int:
     metadata = metadata_service.load_or_extract_metadata(args.job_dir, persist=True)
     print(json.dumps(metadata.to_dict(), ensure_ascii=False, indent=2))
@@ -448,6 +522,9 @@ def main(argv: list[str] | None = None) -> int:
         "setup": cmd_setup,
         "doctor": cmd_doctor,
         "channel": cmd_channel,
+        "bot": cmd_bot,
+        "serve": cmd_serve,
+        "models": cmd_models,
         "auth": cmd_auth,
         "publish": cmd_publish,
         "title": cmd_title,
