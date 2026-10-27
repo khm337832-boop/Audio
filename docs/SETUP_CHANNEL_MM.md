@@ -130,11 +130,20 @@ python main.py channel
 
 ```
 ✅ Channel ချိတ်ဆက်ပြီး
-   နာမည်: သင့် Channel
+   နာမည်: သင့် Channel  (@airecapp)
    Channel ID: UCxxxxxxxxxxxxxxxxxxxxxx
    Subscribers: 1,234 | Videos: 56
    တင်မယ့် privacy: private (24 = Entertainment)
 ```
+
+`(@handle)` ကို ကြည့်ပြီး **သင့် channel ဟုတ်မဟုတ်** အတည်ပြုပါ။
+handle တိတိကျကျ စစ်ချင်ရင် `.env` မှာ ဒါကို ထည့်ထားနိုင်တယ် —
+
+```
+YOUTUBE_CHANNEL_HANDLE=airecapp
+```
+
+မှားတဲ့ channel ဆိုရင် ⚠️ သတိပေးပြီး ဘာလုပ်ရမလဲ ပြပါမယ်။
 
 - **နာမည် မှားနေရင်** → `youtube-oauth2.json` ဖျက်ပြီး `python main.py auth` ကို ပြန် run
   (အဆင့် ၄ က အကောင့်ရွေးတာမှာ channel မှန်တာကို ရွေး)

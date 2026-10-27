@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 import sys
 from pathlib import Path
 
@@ -253,8 +254,9 @@ def cmd_channel(args: argparse.Namespace) -> int:
     channel = items[0]
     snippet = channel.get("snippet", {})
     stats = channel.get("statistics", {})
+    handle = snippet.get("customUrl") or ""
     print("✅ Channel ချိတ်ဆက်ပြီး")
-    print(f"   နာမည်: {snippet.get('title')}")
+    print(f"   နာမည်: {snippet.get('title')}" + (f"  ({handle})" if handle else ""))
     print(f"   Channel ID: {channel.get('id')}")
     print(f"   Subscribers: {stats.get('subscriberCount', '?')} | "
           f"Videos: {stats.get('videoCount', '?')}")
@@ -262,7 +264,11 @@ def cmd_channel(args: argparse.Namespace) -> int:
         print(f"   နိုင်ငံ: {snippet.get('country')}")
     print(f"\n   တင်မယ့် privacy: {config.YOUTUBE_PRIVACY_STATUS} "
           f"({config.YOUTUBE_CATEGORY_ID} = {config.YOUTUBE_CATEGORY_ID and 'Entertainment'})")
-    print("   ဒီ channel မှန်ရင် — python main.py produce --dry-run နဲ့ စမ်းပါ")
+    expected = os.getenv("YOUTUBE_CHANNEL_HANDLE", "").strip().lstrip("@").lower()
+    if expected and handle.lstrip("@").lower() != expected:
+        print(f"\n   ⚠️ မျှော်လင့်ထားတာ @{expected} ဖြစ်ပေမယ့် @{handle.lstrip('@')} ကို ချိတ်မိတယ်")
+        print("      → youtube-oauth2.json ဖျက်ပြီး `python main.py auth` မှာ channel မှန်တာကို ရွေးပါ")
+    print("\n   ဒီ channel မှန်ရင် — python main.py publish --job-dir temp/verify --privacy private")
     print("   channel မှားနေရင် — youtube-oauth2.json ဖျက်ပြီး python main.py auth ကို ပြန် run")
     if len(items) > 1:
         print(f"\n   ℹ️ account မှာ channel {len(items)} ခု ရှိတယ် (ပထမတစ်ခုကို သုံးမယ်)")
