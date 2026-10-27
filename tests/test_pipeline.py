@@ -552,3 +552,68 @@ def test_env_token_used_when_file_missing(monkeypatch, tmp_path):
     info = ys.describe_auth_status()
     assert info.get("token_env") is True
     assert info.get("token_source") == "env"
+
+
+def test_auth_import_file_copies_and_validates(tmp_path, monkeypatch):
+    """`main.py auth --import-file` — Google က ဒေါင်းလုပ်ပေးတဲ့ JSON ကို နေရာချပေးရမယ်။"""
+    import main as cli
+
+    src = tmp_path / "client_secret_1234.apps.json"
+    _write_client_secret(src, "installed", ["http://localhost"])
+    target = tmp_path / "client_secret.json"
+    monkeypatch.setattr(config, "YOUTUBE_CLIENT_SECRETS", target)
+
+    assert cli.main(["auth", "--import-file", str(src)]) == 0
+    assert target.exists()
+    assert '"installed"' in target.read_text("utf-8")
+
+
+def test_auth_import_file_rejects_bad_json(tmp_path, monkeypatch):
+    import main as cli
+
+    bad = tmp_path / "bad.json"
+    bad.write_text("{not json", "utf-8")
+    monkeypatch.setattr(config, "YOUTUBE_CLIENT_SECRETS", tmp_path / "client_secret.json")
+    assert cli.main(["auth", "--import-file", str(bad)]) == 1
+
+
+def test_channel_command_without_token_is_friendly(tmp_path, monkeypatch):
+    import main as cli
+
+    monkeypatch.setattr(config, "YOUTUBE_CLIENT_SECRETS", tmp_path / "cs.json")
+    monkeypatch.setattr(config, "YOUTUBE_TOKEN_FILE", tmp_path / "none.json")
+    monkeypatch.setattr(config, "YOUTUBE_TOKEN_JSON", "")
+    pytest.importorskip("google.oauth2.credentials", reason="google-auth မထည့်ထားပါ")
+    assert cli.main(["channel"]) == 1
+
+
+def test_paste_secret_from_stdin(tmp_path, monkeypatch, capsys):
+    """`auth --paste-secret` — JSON paste လုပ်ပြီး client_secret.json ဖန်တီးရမယ်။"""
+    import io
+
+    import main as cli
+
+    target = tmp_path / "client_secret.json"
+    monkeypatch.setattr(config, "YOUTUBE_CLIENT_SECRETS", target)
+    payload = json.dumps({
+        "installed": {
+            "client_id": "1.apps.googleusercontent.com", "project_id": "demo",
+            "client_secret": "GOCSPX-x", "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+            "token_uri": "https://oauth2.googleapis.com/token", "redirect_uris": ["http://localhost"],
+        }
+    })
+    monkeypatch.setattr("sys.stdin", io.StringIO(payload))
+    assert cli.main(["auth", "--paste-secret"]) == 0
+    assert target.exists()
+    assert '"installed"' in target.read_text("utf-8")
+
+
+def test_paste_secret_rejects_garbage(tmp_path, monkeypatch):
+    import io
+
+    import main as cli
+
+    monkeypatch.setattr(config, "YOUTUBE_CLIENT_SECRETS", tmp_path / "cs.json")
+    monkeypatch.setattr("sys.stdin", io.StringIO("hello world"))
+    assert cli.main(["auth", "--paste-secret"]) == 1
+    assert not (tmp_path / "cs.json").exists()

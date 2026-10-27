@@ -150,6 +150,11 @@ async def run_full_pipeline(
                 "\nသို့ <code>TTS_PROVIDER=elevenlabs</code> + "
                 "<code>ELEVENLABS_API_KEY</code>"
             )
+        elif "accessNotConfigured" in text or "has not been used in project" in text:
+            hint = (
+                "\n\n💡 YouTube Data API v3 ကို Google Cloud project မှာ ဖွင့်ရမယ်"
+                "\n→ console.cloud.google.com/apis/library/youtube.googleapis.com → Enable"
+            )
         elif "YouTube" in text or "OAuth" in text or "token" in text:
             hint = (
                 "\n\n💡 YouTube တင်ရန် <code>client_secret.json</code> + "

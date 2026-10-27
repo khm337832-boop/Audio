@@ -116,12 +116,17 @@ python main.py setup
 python main.py auth --status   # client အမျိုးအစား + token အခြေအနေ
 python main.py auth            # browser ပွင့်တဲ့ စက်အတွက်
 python main.py auth --manual   # browser မပွင့်ရင် (link copy → code paste)
-python main.py auth --status     # client အမျိုးအစား + token အခြေအနေ
+python main.py auth --status      # client အမျိုးအစား + token အခြေအနေ
+python main.py auth --import-file ~/Downloads/client_secret_….json   # rename မလိုဘဲ ထည့်
+python main.py auth --paste-secret                                 # JSON စာသား paste လုပ်ပြီး ထည့်
+python main.py channel            # ချိတ်ထားတဲ့ channel ကို စစ်
 python main.py auth --export-env # cloud အတွက် YOUTUBE_TOKEN_JSON=… ထုတ်
 # ✅ ချိတ်ဆက်ပြီး — channel: <သင့် channel> (subscribers: …)
 ```
 
-📖 **အဆင့်လိုက် လမ်းညွှန် (မြန်မာ): [`docs/YOUTUBE_AUTH_MM.md`](docs/YOUTUBE_AUTH_MM.md)**
+📖 **အဆင့်လိုက် လမ်းညွှန်:** [`docs/SETUP_CHANNEL_MM.md`](docs/SETUP_CHANNEL_MM.md)
+(`client_secret.json` ထည့် → `auth` → channel စစ် → စမ်းတင် → bot) နှင့်
+[`docs/YOUTUBE_AUTH_MM.md`](docs/YOUTUBE_AUTH_MM.md) (Google Cloud အဆင့်များ + အမှားဖြေရှင်းနည်း)
 — Google Cloud project → API enable → consent screen → Desktop OAuth client →
 `client_secret.json` → `python main.py auth` → စမ်းသပ်။ ပြဿနာ ၈ မျိုးအတွက် ဖြေရှင်းနည်းပါ။
 
