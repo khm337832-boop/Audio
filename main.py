@@ -80,6 +80,14 @@ def _build_parser() -> argparse.ArgumentParser:
     sub.add_parser("doctor", help="အဆင်သင့်ဖြစ်မှု အကျဉ်းချုပ် (secrets မပါ — ကူးပို့နိုင်တယ်)")
     sub.add_parser("channel", help="ချိတ်ထားတဲ့ YouTube channel ကို စစ်ဆေးမယ်")
 
+    bot_cmd = sub.add_parser("bot", help="Telegram bot ကို run (token/webhook စစ်ပြီး၊ ရပ်ရင် ပြန်စ)")
+    bot_cmd.add_argument("--check", action="store_true",
+                         help="Token + webhook ကို စစ်ပြီး ပြန်ထွက် (bot မ​runဘူး)")
+    bot_cmd.add_argument("--no-restart", action="store_true",
+                         help="Error ဖြစ်ရင် ပြန်မ​ကြိုးစားဘဲ ထွက်")
+    bot_cmd.add_argument("--log-file", default=None,
+                         help="log ဖိုင် (default: temp/bot.log)")
+
     meta = sub.add_parser("metadata", help="ဇာတ်လမ်းအနှစ်ချုပ်နဲ့ အခန်းအချက်အလက် ပြမယ်")
     meta.add_argument("--job-dir", required=True)
 
@@ -432,6 +440,17 @@ def cmd_auth(args: argparse.Namespace) -> int:
         return 1
 
 
+def cmd_bot(args: argparse.Namespace) -> int:
+    """`python main.py bot` — preflight စစ်ပြီး bot ကို run (ရပ်ရင် ပြန်စ)။"""
+    import bot as bot_module
+
+    return bot_module.run_bot(
+        restart=not args.no_restart,
+        check_only=args.check,
+        log_file=Path(args.log_file) if args.log_file else None,
+    )
+
+
 def cmd_metadata(args: argparse.Namespace) -> int:
     metadata = metadata_service.load_or_extract_metadata(args.job_dir, persist=True)
     print(json.dumps(metadata.to_dict(), ensure_ascii=False, indent=2))
@@ -448,6 +467,7 @@ def main(argv: list[str] | None = None) -> int:
         "setup": cmd_setup,
         "doctor": cmd_doctor,
         "channel": cmd_channel,
+        "bot": cmd_bot,
         "auth": cmd_auth,
         "publish": cmd_publish,
         "title": cmd_title,

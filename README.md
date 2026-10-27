@@ -138,8 +138,14 @@ token ကို `youtube-oauth2.json` မှာ သိမ်းထားတာ�
 ### Telegram
 
 ```bash
-python bot.py
+python main.py bot            # token/webhook စစ်ပြီး run (ရပ်ရင် အလိုလို ပြန်စ)
+python main.py bot --check    # စစ်ဆေးရုံပဲ
 ```
+
+> Bot ရပ်သွားရင် (သို့) `Conflict` / token error ရရင် —
+> [`docs/BOT_TROUBLESHOOT_MM.md`](docs/BOT_TROUBLESHOOT_MM.md) ကို ကြည့်ပါ။
+> Log က `temp/bot.log` (secret မပါ — ကူးပို့နိုင်တယ်)။
+> `python bot.py` နဲ့လည်း run နိုင်တယ် (command အဟောင်း)။
 
 - **🚀 ဇာတ်လမ်းဖန်တီးပြီး YouTube တင်မယ်** → အကြောင်းအရာ ရိုက်ထည့် (သို့ ကျော်) → အဆင့် ၁-၈
 - **🧪 စမ်းသပ် (dry-run)** → YouTube API မခေါ်ဘဲ ဗီဒီယို/thumbnail/SEO payload ထုတ်

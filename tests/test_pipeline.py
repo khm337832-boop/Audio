@@ -617,3 +617,51 @@ def test_paste_secret_rejects_garbage(tmp_path, monkeypatch):
     monkeypatch.setattr("sys.stdin", io.StringIO("hello world"))
     assert cli.main(["auth", "--paste-secret"]) == 1
     assert not (tmp_path / "cs.json").exists()
+
+
+# ------------------------------------------------------------------ bot runner
+def test_token_problem_detects_common_mistakes():
+    import bot as bot_module
+
+    assert bot_module.token_problem("") is not None
+    assert bot_module.token_problem("123456789") is not None          # colon မပါ
+    assert bot_module.token_problem("123 456789:AAFakeTokenForTestingOnly1234567890") is not None
+    good = "123456789:AAFakeTokenForTestingOnly1234567890abcd"
+    assert bot_module.token_problem(good) is None
+
+
+def test_run_bot_without_token_returns_2(monkeypatch, capsys):
+    import bot as bot_module
+
+    monkeypatch.setattr(config, "BOT_TOKEN", "")
+    assert bot_module.run_bot(restart=False) == 2
+    out = capsys.readouterr().out
+    assert "BOT_TOKEN" in out
+    assert "python main.py bot" in out
+
+
+def test_bot_mask_hides_secret():
+    import bot as bot_module
+
+    masked = bot_module._mask("123456789:AAFakeTokenForTestingOnly1234567890abcd")
+    assert masked.startswith("123456789:")
+    assert "AAFakeToken" not in masked
+
+
+def test_main_bot_command_wired(monkeypatch):
+    """`python main.py bot --check` က bot module ဆီ မှန်ကန်စွာ ပို့ရမယ်။"""
+    import main as cli
+
+    calls = {}
+
+    def fake_run_bot(**kwargs):
+        calls.update(kwargs)
+        return 0
+
+    import bot as bot_module
+
+    monkeypatch.setattr(bot_module, "run_bot", fake_run_bot)
+    assert cli.main(["bot", "--check", "--no-restart", "--log-file", "x.log"]) == 0
+    assert calls["check_only"] is True
+    assert calls["restart"] is False
+    assert str(calls["log_file"]).endswith("x.log")

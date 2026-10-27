@@ -224,8 +224,11 @@ python main.py publish --job-dir temp/verify --privacy private
 ## အဆင့် ၇ — Bot စတင်
 
 ```bash
-python bot.py
+python main.py bot
 ```
+
+`python main.py bot` က token/webhook ကို အရင်စစ်ပြီး၊ ကွန်ရက် ပြတ်ရင် အလိုလို ပြန်စပါတယ်။
+Bot ရပ်သွားရင် → [`BOT_TROUBLESHOOT_MM.md`](BOT_TROUBLESHOOT_MM.md) (log: `temp/bot.log`)
 
 Telegram မှာ `/start` → **🚀 ဇာတ်လမ်းဖန်တီးပြီး YouTube တင်မယ်** →
 အကြောင်းအရာ ရိုက်ထည့် (သို့ ကျော်) → အဆင့် ①–⑧ အလိုအလျောက် လုပ်ပြီး **link ပြန်ပို့**မယ်။
